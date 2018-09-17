@@ -1,0 +1,97 @@
+name:                frontend
+version:             0.1.0.0
+description:         Please see README.md
+author:              Alex Klen
+maintainer:          nelkishere@gmail.com
+copyright:           2018 Alex Klen
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Spook.App.Main
+                     , Spook.App.Common
+                     , Spook.App.Assets
+                     , Spook.App.Analytics
+                     , Spook.App.Style
+                     , Spook.App.Fluent
+                     , Spook.App.BootstrapCss
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , aeson
+                     , servant
+                     , servant-reflex
+                     , text
+                     , time
+                     , clay
+                     , containers
+                     , mtl
+                     , vector
+                     , transformers
+                     , lens
+                     , generic-lens
+                     , reflex
+                     , reflex-dom == 0.4
+                     , jsaddle
+                     , jsaddle-dom
+                     , data-default
+                     , dependent-map
+                     , ref-tf
+                     , network-uri
+                     , common
+  default-language:    Haskell2010
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
+  default-extensions:  BangPatterns
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveAnyClass
+                     , DeriveGeneric
+                     , DeriveFunctor
+                     , GADTs
+                     , DuplicateRecordFields
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , FunctionalDependencies
+                     , InstanceSigs
+                     , KindSignatures
+                     , LambdaCase
+                     , RecordWildCards
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , NoMonomorphismRestriction
+                     , OverloadedStrings
+                     , QuasiQuotes
+                     , RankNTypes
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TypeApplications
+                     , TypeFamilies
+                     , TupleSections
+                     , ViewPatterns
+
+
+executable frontend-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , frontend
+  default-language:    Haskell2010
+
+test-suite spec
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  other-modules:       Spook.App.FluentSpec
+                     , Spook.App.RouteSpec
+  build-depends:       base
+                     , frontend
+                     , hspec
+                     , QuickCheck
+                     , text
+                     , containers
+                     , reflex
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010

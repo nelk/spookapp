@@ -1,0 +1,124 @@
+name:                backend
+version:             0.1.0.0
+description:         Please see README.md
+author:              Alex Klen
+maintainer:          nelkishere@gmail.com
+copyright:           2018 Alex Klen
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Spook.Server.Serve
+                     , Spook.Server.Model
+                     , Spook.Server.KeyPerm
+                     , Spook.Server.Data
+  build-depends:       base >= 4.7 && < 5
+                     , common
+                     , aeson
+                     , bytestring
+                     , base64-bytestring
+                     , cipher-aes
+                     , containers
+                     , servant-server
+                     , wai
+                     , wai-app-static
+                     , warp
+                     , text
+                     , mtl
+                     , lens
+                     , time
+                     , network
+                     , random
+                     , transformers
+                     , optparse-generic
+                     , persistent
+                     , persistent-template
+                     , persistent-postgresql
+                     , esqueleto
+                     , resource-pool
+                     , transformers-base
+                     , monad-logger
+                     , monad-control
+                     , time
+  default-language:    Haskell2010
+  ghc-options:         -Wall -Wno-unused-imports
+  default-extensions:  BangPatterns
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveGeneric
+                     , DeriveFunctor
+                     , GADTs
+                     , DuplicateRecordFields
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , RecordWildCards
+                     , FunctionalDependencies
+                     , KindSignatures
+                     , LambdaCase
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , NegativeLiterals
+                     , NoMonomorphismRestriction
+                     , OverloadedStrings
+                     , QuasiQuotes
+                     , RankNTypes
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TypeApplications
+                     , TypeFamilies
+                     , TypeOperators
+                     , TupleSections
+                     , ViewPatterns
+
+
+flag static
+  manual: True
+  default: False
+  description: Pass -static/-pthread to ghc when linking the stack binary.
+  -- Not intended for general use. Simply makes it easier to
+  -- build a fully static binary on Linux platforms that enable it.
+
+executable backend-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  if flag(static)
+    ld-options:        -static -pthread
+  build-depends:       base
+                     , backend
+  default-language:    Haskell2010
+
+test-suite spec
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  other-modules:       Spook.Server.ServeSpec
+  main-is:             Spec.hs
+  build-depends:       base
+                     , common
+                     , backend
+                     , aeson
+                     , bytestring
+                     , time
+                     , transformers
+                     , lens
+                     , text
+                     , mtl
+                     , http-types
+                     , hspec
+                     , hspec-core
+                     , wai
+                     , wai-extra
+                     , warp
+                     , monad-logger
+                     , hspec-wai
+                     , persistent
+                     , persistent-sqlite
+                     , esqueleto
+                     , QuickCheck
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+

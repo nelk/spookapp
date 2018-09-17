@@ -1,0 +1,68 @@
+name:                common
+version:             0.1.0.0
+synopsis:            Initial project template from stack
+description:         Please see README.md
+author:              Alex Klen
+maintainer:          klenishere@gmail.com
+copyright:           2018 Alex Klen
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Spook.Common.Api
+                       Spook.Common.Model
+                       Spook.Common.Servant
+  build-depends:       base >= 4.7 && < 5
+                     , aeson
+                     , bytestring
+                     , servant
+                     , lens
+                     , text
+                     , time
+                     , http-media
+                     , wai
+                     , warp
+  default-language:    Haskell2010
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
+  default-extensions:  BangPatterns
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveAnyClass
+                     , DeriveGeneric
+                     , DeriveFunctor
+                     , GADTs
+                     , DuplicateRecordFields
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , FunctionalDependencies
+                     , KindSignatures
+                     , LambdaCase
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , NegativeLiterals
+                     , NoMonomorphismRestriction
+                     , OverloadedStrings
+                     , QuasiQuotes
+                     , RankNTypes
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TypeApplications
+                     , TypeFamilies
+                     , TypeOperators
+                     , TupleSections
+                     , ViewPatterns
+
+
+test-suite spec
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , common
+                     , hspec
+                     , QuickCheck
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
