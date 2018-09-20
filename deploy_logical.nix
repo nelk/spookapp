@@ -80,7 +80,7 @@ in {
           Restart = "always";
           ExecStart = ''${release.backend}/bin/backend-exe \
             --sitePort=${webServerPort} \
-            --dbHost=database
+            --dbHost=database \
             --dbPort=${toString dbPort}
           '';
         };
@@ -90,4 +90,6 @@ in {
         spookapp = {};
       };
     };
+
+  # TODO: Monitoring instance with prometheus, grafana.
 }
