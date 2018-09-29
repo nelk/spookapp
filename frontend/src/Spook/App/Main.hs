@@ -36,6 +36,8 @@ import qualified JSDOM.Types as Dom
 import qualified JSDOM.Document as Document
 import qualified JSDOM.Window as Window
 import qualified JSDOM.Location as Location
+import qualified JSDOM.EventM as EventM (newListener, addListener)
+import qualified JSDOM.WindowEventHandlers as WindowEventHandlers (hashChange)
 
 import Paths_frontend (getDataFileName)
 import Spook.Common.Model
@@ -139,9 +141,12 @@ landingPage :: forall t m env.
              ) => m ()
 landingPage = do
   postBuildE <- R.getPostBuild
-  token <- getToken
+  tokenDyn <- getToken
+
+  let doGetSpookE = R.leftmost [() <$ R.updated tokenDyn, postBuildE]
+
   getSpookRpc' :: GetSpookRpc t m <- view getSpookRpc
-  getSpookResultE <- getSpookRpc' (R.constDyn token) postBuildE
+  getSpookResultE <- getSpookRpc' tokenDyn doGetSpookE
 
   _ <- R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
     (R.ResponseSuccess _ (Right spookData) _) -> void $ spookWidget spookData
@@ -167,18 +172,29 @@ getHost = runMaybeT $ do
   location <- MaybeT $ Document.getLocation document
   Location.getHost location
 
--- TODO: Listen on changes and return a dynamic of either.
-getToken :: forall m.
-          ( Dom.MonadJSM m
-          ) => m (Either Text Token)
-getToken = maybe (Left "No token in path") Right <$> (runMaybeT getTokenMaybe)
-  where
-    getTokenMaybe = do
-      window <- MaybeT Dom.currentWindow
+getToken :: forall t m.
+          ( R.MonadWidget t m
+          ) => m (R.Dynamic t (Either Text Token))
+getToken = do
+  Just window <- Dom.currentWindow
+  (newTokenMaybeE, triggerTokenMaybe) <- R.newTriggerEvent
+
+  let
+    getTokenMaybe :: Dom.JSM (Maybe Token)
+    getTokenMaybe = runMaybeT $ do
       document <- lift $ Window.getDocument window
       location <- MaybeT $ Document.getLocation document
       -- Drop "#" prefix.
       (Token . Text.drop 1) <$> Location.getHash location
+  jsContextRef <- Dom.askJSM
+  listener <- Dom.liftJSM $ EventM.newListener $ do
+    maybeToken <- Dom.runJSM getTokenMaybe jsContextRef
+    liftIO $ triggerTokenMaybe maybeToken
+
+  Dom.liftJSM $ EventM.addListener window WindowEventHandlers.hashChange listener False
+  startToken <- Dom.liftJSM getTokenMaybe
+  maybeTokenE <- R.holdDyn startToken newTokenMaybeE
+  return $ maybe (Left "No token in path") Right <$> maybeTokenE
 
 spookWidget :: forall t m.
              ( R.MonadWidget t m
