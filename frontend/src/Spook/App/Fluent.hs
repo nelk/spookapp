@@ -1,4 +1,9 @@
-module Spook.App.Fluent where
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
+module Spook.App.Fluent
+  ( module Spook.App.Fluent
+  , CssClass(..)
+  ) where
 
 import Prelude hiding (div)
 import Data.Monoid ((<>))
@@ -10,13 +15,16 @@ import Data.Default (Default, def)
 import Data.String (IsString, fromString)
 import qualified Data.Map as Map
 import qualified Reflex.Dom as R
+import Reflex.Material.Types (CssClass(..))
 import Control.Lens ((^.), (.~), (&))
 import GHC.Generics
 
+{-
 newtype CssClass = CssClass Text
   deriving (Show, Eq)
 unCssClass :: CssClass -> Text
 unCssClass (CssClass c) = c
+-}
 
 instance IsString CssClass where
   fromString = CssClass . Text.pack
@@ -119,6 +127,18 @@ placeholderAttr = "placeholder"
 autofocusAttr :: Text
 autofocusAttr = "autofocus"
 
+widthAttr :: Text
+widthAttr = "width"
+
+heightAttr :: Text
+heightAttr = "height"
+
+frameborderAttr :: Text
+frameborderAttr = "frameborder"
+
+allowAttr :: Text
+allowAttr = "allow"
+
 mergeAttrMaps :: Map Text Text -> Map Text Text -> Map Text Text
 mergeAttrMaps = Map.mergeWithKey (\k _a _b -> Just $ if k `elem` [classAttr, styleAttr] then _a <> " " <> _b else _b) id id
 
@@ -147,7 +167,7 @@ tagImpl' tagName attrs child = do
         & R.modifyAttributes .~ (Map.mapKeys (R.AttributeName Nothing) <$> modifyAttrs)
   R.element tagName cfg child
 
-a, div, span, p, article, section, label, img, h1, h2, h3, h4, nav, table, thead, tr, td, i :: FluentTag
+a, div, span, p, article, section, label, img, h1, h2, h3, h4, nav, table, thead, tr, td, i, iframe :: FluentTag
 a = tagImpl "a"
 div = tagImpl "div"
 span = tagImpl "span"
@@ -166,8 +186,9 @@ thead = tagImpl "thead"
 tr = tagImpl "tr"
 td = tagImpl "td"
 i = tagImpl "i"
+iframe = tagImpl "iframe"
 
-a', div', span', p', article', section', label', img', h1', h2', h3', h4', nav', table', thead', tr', td', i' :: FluentTag'
+a', div', span', p', article', section', label', img', h1', h2', h3', h4', nav', table', thead', tr', td', i', iframe' :: FluentTag'
 a' = tagImpl' "a"
 div' = tagImpl' "div"
 span' = tagImpl' "span"
@@ -186,9 +207,11 @@ thead' = tagImpl' "thead"
 tr' = tagImpl' "tr"
 td' = tagImpl' "td"
 i' = tagImpl' "i"
+iframe' = tagImpl' "iframe"
 
 br :: FluentVoidTag
 br attrs = tagImpl "br" attrs (return ())
 
 br' :: FluentVoidTag'
 br' attrs = fst <$> tagImpl' "br" attrs (return ())
+

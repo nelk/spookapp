@@ -41,7 +41,7 @@ createPool :: IO Es.ConnectionPool
 createPool = runStderrLoggingT $ createSqlitePool ":memory:" 1
 
 mkApplication :: Es.ConnectionPool -> Wai.Application
-mkApplication dbPool = app $ SiteContext dbPool
+mkApplication dbPool = app $ SiteContext dbPool Nothing Nothing False
 
 setupDb :: Es.ConnectionPool -> IO ()
 setupDb dbPool = flip runSqlPool dbPool $ do

@@ -22,12 +22,17 @@ library
                      , cipher-aes
                      , containers
                      , servant-server
+                     , servant-options
                      , wai
                      , wai-app-static
+                     , wai-extra
+                     , wai-cors
                      , warp
+                     , http-types
                      , text
                      , mtl
                      , lens
+                     , generic-lens
                      , time
                      , network
                      , random

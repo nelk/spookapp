@@ -1,6 +1,6 @@
 module Main where
 
-import Spook.App.Main (app)
+import Spook.App.Main (mainish)
 
 main :: IO ()
-main = app
+main = mainish

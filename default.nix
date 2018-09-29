@@ -7,18 +7,22 @@
     common = ./common;
     backend = ./backend;
     frontend = ./frontend;
+    reflex-dom-helpers = ./reflex-dom-helpers;
+    reflex-material = ./reflex-material;
   };
 
   overrides = self: super: {
     inspection-testing = self.callHackage "inspection-testing" "0.2.0.1" {};
     generic-lens = self.callHackage "generic-lens" "0.5.1.0" {};
     # servant = self.callHackage "servant" "0.12.1" {};
+
+    reflex-material = pkgs.haskell.lib.dontHaddock super.reflex-material;
   };
 
 
   shells = {
-    ghc = ["common" "backend" "frontend"];
-    ghcjs = ["common" "frontend"];
+    ghc = ["common" "backend" "frontend" "reflex-dom-helpers" "reflex-material"];
+    ghcjs = ["common" "frontend" "reflex-dom-helpers" "reflex-material"];
   };
 
   shellToolOverrides = ghc: super: {

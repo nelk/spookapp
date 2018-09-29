@@ -18,7 +18,7 @@ data SpookData = SpookData
   }
   deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
-data SpookFailure = SpookAlreadyClaimed | SpookDoesNotExist
+data SpookFailure = SpookAlreadyClaimed | SpookDoesNotExist | SpookTemporaryFailure
   deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
 data StatLog = LogTimeSpent Time.UTCTime

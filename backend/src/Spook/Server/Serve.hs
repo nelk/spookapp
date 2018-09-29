@@ -9,12 +9,14 @@ module Spook.Server.Serve
 
 import Network.Wai
 import Network.Wai.Handler.Warp
+import Network.HTTP.Types.Status (status404)
+import Data.Generics.Product (the)
 import qualified Network.Wai.Application.Static as Wai
 import qualified WaiAppStatic.Types as Wai
 import Network.Socket
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text (decodeUtf8, encodeUtf8)
-import Data.Maybe (isNothing, fromMaybe)
+import Data.Maybe (isNothing, fromMaybe, fromJust, isJust)
 import Numeric (showHex)
 import Data.Word (Word8, Word16)
 import Data.Time (NominalDiffTime, getCurrentTime, addUTCTime)
@@ -23,6 +25,8 @@ import qualified Data.ByteString.Lazy as BsL
 import qualified Data.ByteString as Bs
 import qualified Data.ByteString.Base64.URL as Bs64Url
 import Servant
+import Network.Wai.Middleware.Cors (cors, CorsResourcePolicy(..), simpleCorsResourcePolicy)
+import Network.Wai.Middleware.Servant.Options (provideOptions)
 import Data.Monoid ((<>))
 import Control.Monad (replicateM, forM_, void, when)
 import Control.Monad.Base (MonadBase)
@@ -34,12 +38,13 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Logger (runStderrLoggingT)
 import Control.Lens
 
+import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool, runMigration, SqlBackend)
 import qualified Database.Esqueleto as Es
 import Data.Pool (Pool)
 
 import Spook.Common.Model
-import Spook.Common.Api (FullApi, Api, ImplicitApi)
+import Spook.Common.Api (FullApi, Api, AccessControlAllowOriginHeader)
 import Spook.Server.Model
 import Spook.Server.Data (eventTime)
 import Options.Generic as OG
@@ -55,8 +60,11 @@ data Params = Params
   , dbPassword :: Maybe Text
   , dbDatabase :: Maybe Text
   , dbPoolSize :: Maybe Int
-  , dbSsl :: Maybe Bool
+  , dbSsl :: Bool
   , sitePort :: Maybe Int
+  , serveIndexDirectory :: Maybe FilePath
+  , serveStaticDirectory :: Maybe FilePath
+  , allowCrossOrigin :: Bool
   }
   deriving (Show, Generic)
 
@@ -69,14 +77,16 @@ dbConnectInfo Params{..} = Text.encodeUtf8 $ Text.unwords $
   , "user=" <> fromMaybe "spookapp" dbUser
   , "password=" <> fromMaybe "password" dbPassword
   , "dbname=" <> fromMaybe "spook" dbDatabase
-  ] ++ ["sslmode=require" | fromMaybe False dbSsl]
+  ] ++ ["sslmode=require" | dbSsl]
 
 data SiteContext = SiteContext
-  { _siteDbPool :: Pool SqlBackend
-  }
-makeLenses ''SiteContext
+  { siteDbPool :: Pool SqlBackend
+  , siteServeIndexDirectory :: Maybe FilePath
+  , siteServeStaticDirectory :: Maybe FilePath
+  , siteAllowCrossOrigin :: Bool
+  } deriving Generic
 
--- TODO: Lookup servant threading model - how do threads interact with StateT? Make random part of that
+-- TODO: Lookup servant threading model - how do threads interact with StateT? Make random part of that.
 
 newtype App a = App { runApp :: ReaderT SiteContext Handler a }
   deriving (Functor, Applicative, Monad, MonadReader SiteContext, MonadError ServantErr, MonadIO, MonadBase IO)
@@ -88,7 +98,7 @@ instance MonadBaseControl IO App where
 
 runSql :: Es.SqlPersistT App a -> App a
 runSql sql = do
-  pool <- (^. siteDbPool) <$> ask
+  pool <- view (the @"siteDbPool")
   Es.runSqlPool sql pool
 
 startApp :: IO ()
@@ -99,19 +109,26 @@ startApp = do
     runMigration migrateAll
     insertTestData
   let port = fromMaybe 8080 $ sitePort params
+      context = SiteContext
+        { siteDbPool = dbPool
+        , siteServeIndexDirectory = serveIndexDirectory params
+        , siteServeStaticDirectory = serveStaticDirectory params
+        , siteAllowCrossOrigin = allowCrossOrigin params
+        }
+
   putStrLn $ "Running on port " ++ show port
-  run port $ app $ SiteContext dbPool
+  run port $ app context
 
 testData :: [SavedSpook]
 testData =
   [ SavedSpook
-      { savedSpookToken = "abc12399"
+      { savedSpookToken = "abc12401"
       , savedSpookParent = Nothing
       , savedSpookVisits = 1
       , savedSpookIp = Nothing
       , savedSpookReferrer = Nothing
       , savedSpookChildSpookCount = 0
-      , savedSpookVideoUrl = "https://www.youtube.com/watch?v=oJqc4vByZCc&t=0s&index=6&list=FL2o7N6B96f48pE0yX01iY0A"
+      , savedSpookVideoUrl = "https://www.youtube.com/embed/oJqc4vByZCc?autoplay=1&rel=0&amp;controls=0&amp;showinfo=0"
       }
   ]
 
@@ -121,14 +138,22 @@ insertTestData = forM_ testData $ \savedSpook -> do
   when (isNothing maybeDbSpook) $ void $ Es.insert savedSpook
 
 app :: SiteContext -> Application
-app context = (serve (Proxy :: Proxy Api) $ server context)
--- app context = (serve (Proxy :: Proxy FullApi) $ server context)
+app context =
+ let policy = simpleCorsResourcePolicy { corsRequestHeaders = ["Content-Type"] }
+     corsMiddleware
+       | siteAllowCrossOrigin context =
+           cors (const $ Just policy) . provideOptions (Proxy :: Proxy Api)
+       | otherwise = id
+ in logStdoutDev
+    $ corsMiddleware
+    $ serve (Proxy :: Proxy FullApi)
+    $ server context
 
 convertApp :: SiteContext -> App :~> Handler
 convertApp cfg = NT (flip runReaderT cfg . runApp)
 
-server :: SiteContext -> Server Api
-server context = enter (convertApp context) (getSpookHandler :<|> newSpookHandler)
+server :: SiteContext -> Server FullApi
+server context = enter (convertApp context) ((getSpookHandler :<|> newSpookHandler) {- :<|> indexHandler -} ) :<|> rawHandler context
 
 getAddrIpAsText :: Maybe Text -> SockAddr -> Maybe Text
 getAddrIpAsText (Just realIpHeader) _ | not (Text.null realIpHeader) = Just realIpHeader
@@ -173,7 +198,7 @@ getSpookByToken (Token token) = do
 getSpookHandler :: Token -> App (Either SpookFailure SpookData)
 getSpookHandler token = do
   maybeSpook <- getSpookByToken token
-  case maybeSpook of
+  result <- case maybeSpook of
     Nothing -> return $ Left SpookDoesNotExist
     Just (Es.entityVal -> spook) ->
       return $ Right $ SpookData
@@ -181,19 +206,41 @@ getSpookHandler token = do
         , token = token
         , numSpooked = savedSpookChildSpookCount spook
         }
+  liftIO $ putStrLn $ "getSpookHandler\n" <> show token <> "\n" <> show result
+  return result
+  -- return (addHeader "*" result :: Headers '[AccessControlAllowOriginHeader] (Either SpookFailure SpookData))
 
 newSpookHandler :: Maybe Text -> Maybe Text -> SockAddr -> Token -> App (Either SpookFailure [Token])
 newSpookHandler referrerHeader realIpHeader sockAddr token = do
   maybeSpook <- getSpookByToken token
-  case maybeSpook of
+  result <- case maybeSpook of
     Nothing -> return $ Left SpookDoesNotExist
     Just spook ->
       return $ Right []
+  liftIO $ putStrLn $ "newSpookHandler\n" <> show token <> "\n" <> show result
+  return result
+  -- return (addHeader "*" result :: Headers '[AccessControlAllowOriginHeader] (Either SpookFailure [Token]))
 
-indexHandler :: [Text] -> App BsL.ByteString
-indexHandler _ = liftIO $ BsL.readFile "public/index.html"
+-- |Landing page for retrieving spook - always serve index.
+indexHandler :: Text -> App BsL.ByteString
+indexHandler _ = do
+  maybeIndexDir <- view (the @"siteServeIndexDirectory")
+  case maybeIndexDir of
+    Just dir -> liftIO $ BsL.readFile $ dir <> "/index.html"
+    _ -> throwError err404
 
--- |For static files that also do not require a visitor token.
-rawHandler :: Server Raw
-rawHandler = serveDirectoryWith $ (Wai.defaultWebAppSettings "public/") { Wai.ssIndices = [Wai.unsafeToPiece "index.html"] }
+-- |For either static files, or js and other files. Disambiguate by checking for /static/ prefix.
+rawHandler :: SiteContext -> Server Raw
+rawHandler context =
+  let
+    rawHandler' req respond
+      | "static/" `Bs.isPrefixOf` rawPathInfo req && isJust (siteServeStaticDirectory context) =
+        Wai.staticApp (Wai.defaultWebAppSettings $ fromJust $ siteServeStaticDirectory context) req respond
+      | isJust (siteServeIndexDirectory context) =
+        Wai.staticApp ((Wai.defaultWebAppSettings $ fromJust $ siteServeIndexDirectory context) { Wai.ssIndices = [Wai.unsafeToPiece "index.html"] }) req respond
+    rawHandler' _ respond = respond $ responseLBS status404
+                            [ ("Content-Type", "text/plain")
+                            ] "File not found"
+  in Tagged rawHandler'
+
 

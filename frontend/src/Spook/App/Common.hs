@@ -3,7 +3,6 @@ module Spook.App.Common where
 import qualified Reflex.Dom as R
 import qualified Data.Map as Map
 import Data.Text (Text)
-import Data.Monoid ((<>))
 
 -- |Use to delay triggering of an action until just after the given event fires.
 -- Use this to trigger Rpcs when you need a behavior fed to it to have the new

@@ -16,6 +16,7 @@ library
                      , Spook.App.Analytics
                      , Spook.App.Style
                      , Spook.App.Fluent
+                     , Spook.App.Runner
                      , Spook.App.BootstrapCss
   build-depends:       base >= 4.7 && < 5
                      , bytestring
@@ -33,6 +34,8 @@ library
                      , generic-lens
                      , reflex
                      , reflex-dom == 0.4
+                     , reflex-dom-helpers
+                     , reflex-material
                      , jsaddle
                      , jsaddle-dom
                      , data-default
@@ -40,6 +43,13 @@ library
                      , ref-tf
                      , network-uri
                      , common
+  -- if !impl(ghcjs)
+  --   build-depends:     wai
+  --                    , warp
+  --                    , websockets
+  --                    , jsaddle-warp
+  --                    , http-types
+
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
   default-extensions:  BangPatterns

@@ -2,4 +2,6 @@ packages:
   common/
   frontend/
   backend/
+  reflex-dom-helpers/
+  reflex-material/
 

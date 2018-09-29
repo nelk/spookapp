@@ -1,83 +1,216 @@
 {-# LANGUAGE RecursiveDo #-}
 
 module Spook.App.Main
-    ( app
+    ( mainish
     ) where
 
+import Data.Default (def)
+import GHC.Generics (Generic)
 import qualified Data.Time as Time
 import Data.Proxy (Proxy(..))
+import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Monoid ((<>))
 import qualified Reflex.Dom as R
+import qualified Reflex.Dom.Main
 import qualified Servant.Reflex as R
+import qualified Reflex.Material.Basic as RM
+import qualified Reflex.Material.Card as RM
+import qualified Reflex.Material.Button as RM
+import qualified Reflex.Tags as RT
 import Servant.API
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Control.Lens
+import Data.Generics.Product (the)
 import Control.Applicative (liftA, liftA2)
 import Control.Monad (void, forM, forM_)
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (MonadReader, ask, runReaderT)
-import Data.Maybe (isJust)
+import Control.Monad.Reader (MonadReader, ReaderT(..), ask, runReaderT)
+import Data.Either (isLeft)
+import Data.Maybe (isJust, fromMaybe)
 import qualified Data.Map as Map
 import Language.Javascript.JSaddle.Monad (runJSaddle)
+import qualified JSDOM as Dom (currentWindow)
 import qualified JSDOM.Types as Dom
 import qualified JSDOM.Document as Document
 import qualified JSDOM.Window as Window
+import qualified JSDOM.Location as Location
 
+import Paths_frontend (getDataFileName)
 import Spook.Common.Model
 import Spook.Common.Api
 import Spook.App.Analytics (analyticsScript, analyticsSetUserId)
 import Spook.App.Common (attrHideIf)
 import qualified Spook.App.Style as S
+import Spook.App.Runner (customRun)
 import qualified Spook.App.Fluent as F
 import qualified Spook.App.BootstrapCss as Bootstrap
 import qualified Spook.App.Assets as Assets
 
 
-stylesheet :: R.MonadWidget t m => Text -> m ()
-stylesheet s = R.elAttr "link" (Map.fromList [("rel", "stylesheet"), ("href", s)]) $ return ()
+-- stylesheet :: R.MonadWidget t m => Text -> m ()
+-- stylesheet s = R.elAttr "link" (Map.fromList [("rel", "stylesheet"), ("href", s)]) $ return ()
 
-embedStyle :: R.MonadWidget t m => Text -> m ()
-embedStyle = R.el "style" . R.text
+-- embedStyle :: R.MonadWidget t m => Text -> m ()
+-- embedStyle = R.el "style" . R.text
 
 
-app :: IO ()
+mainish :: IO ()
+mainish = do
+  customRun $ Reflex.Dom.Main.mainWidgetWithHead htmlHead app
+
+htmlHead :: forall t m. R.MonadWidget t m => m ()
+htmlHead = do
+    R.el "title" $ R.text "Spook!"
+    RM.mobile_
+    -- TODO: Copy and serve from nginx? Host locally for dev too?
+    {-
+    RM.styles_ $ RM.Style
+      { RM.styleIcons = ["https://fonts.googleapis.com/icon?family=Material+Icons"]
+      , RM.styleFonts = []
+      , RM.styleCss = ["http://unpkg.com/material-components-web@latest/dist/material-components-web.css"]
+      }
+    -}
+
+    -- R.elAttr "meta" (Map.fromList [("name", "viewport"), ("content", "width=device-width, initial-scale=1.0")]) $ return ()
+    forM_ ["shortcut icon", "icon"] $ \rel ->
+      R.elAttr "link" (Map.fromList [("rel", rel), ("href", "/favicon.ico"), ("type", "image/icon")]) $ return ()
+    -- mapM_ stylesheet Assets.bootstrapCssPaths
+    -- stylesheet "https://fonts.googleapis.com/css?family=Alex+Brush"
+    -- stylesheet "https://fonts.googleapis.com/css?family=Merriweather+Sans:300,400"
+    -- stylesheet "https://fonts.googleapis.com/css?family=Nova+Mono"
+    RM.stylesheet_ "https://fonts.googleapis.com/icon?family=Material+Icons"
+
+    RM.style_ S.rawCss
+    RM.stylesheet_ "https://unpkg.com/material-components-web@latest/dist/material-components-web.min.css"
+
+    RM.script_ "https://unpkg.com/material-components-web@latest/dist/material-components-web.min.js"
+    RM.scriptDo_ analyticsScript
+
+type RpcArg t a = R.Dynamic t (Either Text a)
+type RpcRes t m a = R.Event t ()
+                 -> m (R.Event t (R.ReqResult () a))
+type GetSpookRpc t m = RpcArg t Token
+                    -> RpcRes t m (Either SpookFailure SpookData)
+type NewSpookRpc t m = RpcArg t Text
+                    -> RpcArg t Text
+                    -> RpcArg t Token
+                    -> RpcRes t m (Either SpookFailure [Token])
+
+class HasGetSpookRpc env t m where
+  getSpookRpc :: Lens' env (GetSpookRpc t m)
+
+class HasNewSpookRpc env t m where
+  newSpookRpc :: Lens' env (NewSpookRpc t m)
+
+type App env reflexM = ReaderT env reflexM
+
+data Env t (reflexM :: * -> *) = Env
+  { envGetSpookRpc :: GetSpookRpc t (App (Env t reflexM) reflexM)
+  , envNewSpookRpc :: NewSpookRpc t (App (Env t reflexM) reflexM)
+  } deriving Generic
+
+instance HasGetSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
+  getSpookRpc = the @"envGetSpookRpc"
+
+instance HasNewSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
+  newSpookRpc = the @"envNewSpookRpc"
+
+
+app :: forall t m. R.MonadWidget t m => m ()
 app = do
-    --Dom.runWebGUI $ \webView -> R.withWebViewSingleton webView $ \webViewSing -> do
-  -- TODO: Don't do irrefutable matches.
-  -- Just doc <- fmap (Dom.castTo Dom.HTMLDocument) <$> Dom.webViewGetDomDocument webView
-  -- Just (body :: Dom.HTMLElement) <- Document.getBody doc
-  -- Just headElement <- fmap Dom.castToHTMLElement <$> Document.getHead doc
+  maybeHost <- getHost
+  -- For local development, always fetch on :8008, even if we're served from jsaddle-warp server.
+  let basePath = case maybeHost of
+        Just h | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h -> "http://localhost:8080/"
+        otherwise -> "/"
+      ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
+        = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
+      env = Env (\a b -> lift $ getSpookRpc a b) (\a b c d -> lift $ newSpookRpc a b c d)
+      unwrapReaderEnv w = runReaderT w env
+  let lp :: App (Env t m) m () = landingPage
+  unwrapReaderEnv lp
 
-  let head :: forall t m. R.MonadWidget t m => m ()
-      head = do
-  -- R.attachWidget headElement webViewSing $ do
-        R.elAttr "meta" (Map.fromList [("name", "viewport"), ("content", "width=device-width, initial-scale=1.0")]) $ return ()
-        forM_ ["shortcut icon", "icon"] $ \rel ->
-          R.elAttr "link" (Map.fromList [("rel", rel), ("href", "/favicon.ico"), ("type", "image/icon")]) $ return ()
-        mapM_ stylesheet Assets.bootstrapCssPaths
-        stylesheet "https://fonts.googleapis.com/css?family=Alex+Brush"
-        stylesheet "https://fonts.googleapis.com/css?family=Merriweather+Sans:300,400"
-        stylesheet "https://fonts.googleapis.com/css?family=Nova+Mono"
-        stylesheet "https://fonts.googleapis.com/icon?family=Material+Icons"
+landingPage :: forall t m env.
+             ( R.MonadWidget t m
+             , MonadReader env m
+             , HasGetSpookRpc env t m
+             ) => m ()
+landingPage = do
+  postBuildE <- R.getPostBuild
+  token <- getToken
+  getSpookRpc' :: GetSpookRpc t m <- view getSpookRpc
+  getSpookResultE <- getSpookRpc' (R.constDyn token) postBuildE
 
-        embedStyle S.rawCss
-        R.el "script" $ R.text analyticsScript
+  _ <- R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
+    (R.ResponseSuccess _ (Right spookData) _) -> void $ spookWidget spookData
+    (R.ResponseSuccess _ (Left spookFailure) _) -> void $ badTokenWidget spookFailure
+    (R.ResponseFailure _ _ _) -> badTokenWidget SpookTemporaryFailure
+    (R.RequestFailure _ _) -> noTokenWidget
+  return ()
 
-  -- R.attachWidget body webViewSing app'
-  R.mainWidgetWithHead head app'
+badTokenWidget :: forall t m. R.DomBuilder t m => SpookFailure -> m ()
+badTokenWidget SpookAlreadyClaimed = R.text "This spook has already been claimed"
+badTokenWidget SpookDoesNotExist = R.text "This spook does not exist"
+badTokenWidget SpookTemporaryFailure = R.text "We had a temporary issue. Try reloading the page"
 
-{-
-type GetTokenRpc t m = R.Dynamic t (Either Text PassPhrase) -> R.Dynamic t (Either Text Text) -> R.Event t () -> m (R.Event t (R.ReqResult () Token))
-type SiteDataRpc t m = R.Dynamic t (Either Text Token) -> R.Dynamic t (Either Text Text) -> R.Event t () -> m (R.Event t (R.ReqResult () SiteData))
--}
+noTokenWidget :: forall t m. R.DomBuilder t m => m ()
+noTokenWidget = R.text "Welcome! You'll need to receive a unique spook from someone else."
 
-app' :: forall t m. R.MonadWidget t m => m ()
-app' = do
-  R.text' "Hello"
-  let basePath = "http://192.168.0.142:8080/"  --"/"
-  -- let ((tokenRpc :: TokenRpc t m) :<|> (siteDataRpc :: SiteDataRpc t m) :<|> (rsvpRpc :: RsvpRpc t m)) = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
+getHost :: forall m.
+          ( Dom.MonadJSM m
+          ) => m (Maybe Text)
+getHost = runMaybeT $ do
+  window <- MaybeT Dom.currentWindow
+  document <- lift $ Window.getDocument window
+  location <- MaybeT $ Document.getLocation document
+  Location.getHost location
+
+-- TODO: Listen on changes and return a dynamic of either.
+getToken :: forall m.
+          ( Dom.MonadJSM m
+          ) => m (Either Text Token)
+getToken = maybe (Left "No token in path") Right <$> (runMaybeT getTokenMaybe)
+  where
+    getTokenMaybe = do
+      window <- MaybeT Dom.currentWindow
+      document <- lift $ Window.getDocument window
+      location <- MaybeT $ Document.getLocation document
+      -- Drop "#" prefix.
+      (Token . Text.drop 1) <$> Location.getHash location
+
+spookWidget :: forall t m.
+             ( R.MonadWidget t m
+             ) => SpookData
+               -> m (R.Event t ())
+spookWidget spookData = do
+  F.div RM.mdcCard_ $ do
+  -- RM.card_ "div" mempty $ do
+    F.section RM.mdcCardPrimary_ $ do
+    --RM.cardPrimary_ "section" mempty $ do
+      F.h1 RM.mdcCardTitleLarge_ $
+        R.text "You've Been Spooked!"
+      embedYoutube $ spookData ^. the @"videoUrl"
+    F.section RM.mdcCardActions_ $ do
+      RM.mdButton def $ R.text "Redeem My Spook"
+
+
+embedYoutube :: forall t m.
+              ( R.DomBuilder t m
+              , R.PostBuild t m
+              ) => LinkUrl
+                -> m ()
+embedYoutube (LinkUrl url) = do
+  let attrs :: F.Attrs t = mconcat
+        [ F.toAttrs (F.widthAttr, "1000" :: Text)
+        , F.toAttrs (F.heightAttr, "500" :: Text)
+        , F.toAttrs (F.srcAttr, url)
+        , F.toAttrs (F.frameborderAttr, "0" :: Text)
+        , F.toAttrs (F.allowAttr, "autoplay;encrypted-media" :: Text)
+        ]
+  F.iframe attrs (return ())
+
 
 {-
   postBuildE <- R.getPostBuild
@@ -112,7 +245,6 @@ app' = do
     $ \siteData -> analyticsSetUserId $ Text.unpack $ siteData ^. dataVisitorExternalId
     -}
 
-  return ()
 
 logo :: R.MonadWidget t m => m ()
 logo = F.h1 S.clzLogo $ R.text "Spook"

@@ -1,13 +1,13 @@
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
 
-module KlenLi.App.FluentSpec where
+module Spook.App.FluentSpec where
 
-import Test.Hspec
-import qualified Data.Map as Map
-import qualified Reflex.Spider as R
+import qualified Data.Map         as Map
+import qualified Reflex.Spider    as R
+import           Test.Hspec
 
-import KlenLi.App.Fluent
+import           Spook.App.Fluent
 
 spec :: Spec
 spec = do
