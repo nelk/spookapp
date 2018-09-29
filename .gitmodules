@@ -3,7 +3,7 @@
 	url = git@github.com:reflex-frp/reflex-platform.git
 [submodule "reflex-material"]
 	path = reflex-material
-	url = https://github.com/rvl/reflex-material
+	url = https://github.com/nelk/reflex-material
 [submodule "reflex-dom-helpers"]
 	path = reflex-dom-helpers
 	url = git@github.com:hansroland/reflex-dom-helpers.git
