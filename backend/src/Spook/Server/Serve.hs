@@ -50,9 +50,6 @@ import Spook.Server.Data (eventTime)
 import Options.Generic as OG
 
 
-tokenLifetime :: NominalDiffTime
-tokenLifetime = 24 * 60 * 60 -- 24 hours.
-
 data Params = Params
   { dbHost :: Maybe Text
   , dbPort :: Maybe Int
@@ -177,7 +174,7 @@ headMay :: [a] -> Maybe a
 headMay (a:_) = Just a
 headMay _ = Nothing
 
--- TODO: Store ip, cookie. Can rewatch with it only.
+-- TODO: Store cookie. Can rewatch with it only.
 -- TODO: Can only generate new ones once, store if done, return stored ones if same ip, cookie.
 
 getSpookByTokenOrErr :: ServantErr -> Token -> App (Es.Entity SavedSpook)
@@ -198,6 +195,10 @@ getSpookByToken (Token token) = do
 getSpookHandler :: Token -> App (Either SpookFailure SpookData)
 getSpookHandler token = do
   maybeSpook <- getSpookByToken token
+
+  -- Check if already redeemed.
+  -- TODO
+
   result <- case maybeSpook of
     Nothing -> return $ Left SpookDoesNotExist
     Just (Es.entityVal -> spook) ->
@@ -234,7 +235,7 @@ rawHandler :: SiteContext -> Server Raw
 rawHandler context =
   let
     rawHandler' req respond
-      | "static/" `Bs.isPrefixOf` rawPathInfo req && isJust (siteServeStaticDirectory context) =
+      | "/static/" `Bs.isPrefixOf` rawPathInfo req && isJust (siteServeStaticDirectory context) =
         Wai.staticApp (Wai.defaultWebAppSettings $ fromJust $ siteServeStaticDirectory context) req respond
       | isJust (siteServeIndexDirectory context) =
         Wai.staticApp ((Wai.defaultWebAppSettings $ fromJust $ siteServeIndexDirectory context) { Wai.ssIndices = [Wai.unsafeToPiece "index.html"] }) req respond

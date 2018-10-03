@@ -39,7 +39,7 @@ in {
   webserver = {pkgs, ...}:
     let release = import ./release.nix { inherit pkgs; };
     in {
-      environment.systemPackages = [ release.backend release.frontend ];
+      environment.systemPackages = [ release.backend release.frontend release.frontend-static-files ];
 
       networking.firewall.allowedTCPPorts = [ 22 80 443 ];
 
@@ -61,8 +61,9 @@ in {
           "${domain}" = {
             forceSSL = enableSsl;
             enableACME = enableSsl;
+            locations."/app/".proxyPass = "http://localhost:${webServerPort}";
+            locations."/static/".root = "${release.frontend-static-files}";
             locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
-            locations."/app".proxyPass = "http://localhost:${webServerPort}";
           };
           "www.${domain}" = {
             forceSSL = enableSsl;

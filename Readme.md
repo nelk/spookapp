@@ -57,7 +57,7 @@ Two physical deployment options listed below.
 ## Cloud production deployment (GCE):
 > // Copy/symlink pkey.pem to project directory.
 > // Create .envrc that exports environment variables GCE\_PROJECT, GCE\_SERVICE\_ACCOUNT, and ACCESS\_KEY\_PATH.
-> . ./.envrc
+> source .envrc
 > nixops create deploy\_logical.nix deploy\_gce.nix --name spook-gce
 > nixops deploy -d spook-gce
 

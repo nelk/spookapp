@@ -76,8 +76,9 @@ htmlHead = do
     -}
 
     -- R.elAttr "meta" (Map.fromList [("name", "viewport"), ("content", "width=device-width, initial-scale=1.0")]) $ return ()
+    basePath <- computeBasePath
     forM_ ["shortcut icon", "icon"] $ \rel ->
-      R.elAttr "link" (Map.fromList [("rel", rel), ("href", "/favicon.ico"), ("type", "image/icon")]) $ return ()
+      R.elAttr "link" (Map.fromList [("rel", rel), ("href", basePath <> "static/favicon.ico"), ("type", "image/icon")]) $ return ()
     -- mapM_ stylesheet Assets.bootstrapCssPaths
     -- stylesheet "https://fonts.googleapis.com/css?family=Alex+Brush"
     -- stylesheet "https://fonts.googleapis.com/css?family=Merriweather+Sans:300,400"
@@ -106,11 +107,15 @@ class HasGetSpookRpc env t m where
 class HasNewSpookRpc env t m where
   newSpookRpc :: Lens' env (NewSpookRpc t m)
 
+class HasBasePath env where
+  getBasePath :: Lens' env Text
+
 type App env reflexM = ReaderT env reflexM
 
 data Env t (reflexM :: * -> *) = Env
   { envGetSpookRpc :: GetSpookRpc t (App (Env t reflexM) reflexM)
   , envNewSpookRpc :: NewSpookRpc t (App (Env t reflexM) reflexM)
+  , envBasePath :: Text
   } deriving Generic
 
 instance HasGetSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
@@ -119,17 +124,15 @@ instance HasGetSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
 instance HasNewSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
   newSpookRpc = the @"envNewSpookRpc"
 
+instance HasBasePath (Env t reflexM) where
+  getBasePath = the @"envBasePath"
 
 app :: forall t m. R.MonadWidget t m => m ()
 app = do
-  maybeHost <- getHost
-  -- For local development, always fetch on :8008, even if we're served from jsaddle-warp server.
-  let basePath = case maybeHost of
-        Just h | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h -> "http://localhost:8080/"
-        otherwise -> "/"
-      ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
+  basePath <- computeBasePath
+  let ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
         = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
-      env = Env (\a b -> lift $ getSpookRpc a b) (\a b c d -> lift $ newSpookRpc a b c d)
+      env = Env (\a b -> lift $ getSpookRpc a b) (\a b c d -> lift $ newSpookRpc a b c d) basePath
       unwrapReaderEnv w = runReaderT w env
   let lp :: App (Env t m) m () = landingPage
   unwrapReaderEnv lp
@@ -138,6 +141,7 @@ landingPage :: forall t m env.
              ( R.MonadWidget t m
              , MonadReader env m
              , HasGetSpookRpc env t m
+             , HasBasePath env
              ) => m ()
 landingPage = do
   postBuildE <- R.getPostBuild
@@ -155,10 +159,21 @@ landingPage = do
     (R.RequestFailure _ _) -> noTokenWidget
   return ()
 
-badTokenWidget :: forall t m. R.DomBuilder t m => SpookFailure -> m ()
-badTokenWidget SpookAlreadyClaimed = R.text "This spook has already been claimed"
-badTokenWidget SpookDoesNotExist = R.text "This spook does not exist"
-badTokenWidget SpookTemporaryFailure = R.text "We had a temporary issue. Try reloading the page"
+badTokenText :: SpookFailure -> Text
+badTokenText SpookAlreadyClaimed = "This spook has already been claimed"
+badTokenText SpookDoesNotExist = "This spook does not exist"
+badTokenText SpookTemporaryFailure = "We had a temporary issue. Try reloading the page"
+
+badTokenWidget :: forall t m env.
+                ( R.MonadWidget t m
+                , MonadReader env m
+                , HasBasePath env
+                ) => SpookFailure
+                  -> m ()
+badTokenWidget failure = do
+  basePath <- view getBasePath
+  F.img (F.srcAttr, basePath <> "static/dootdoot.gif" :: Text) $ return ()
+  R.text $ badTokenText failure
 
 noTokenWidget :: forall t m. R.DomBuilder t m => m ()
 noTokenWidget = R.text "Welcome! You'll need to receive a unique spook from someone else."
@@ -171,6 +186,16 @@ getHost = runMaybeT $ do
   document <- lift $ Window.getDocument window
   location <- MaybeT $ Document.getLocation document
   Location.getHost location
+
+computeBasePath :: forall m.
+             ( Dom.MonadJSM m
+             ) => m Text
+computeBasePath = do
+  maybeHost <- getHost
+  -- For local development, always fetch on :8080, even if we're served from jsaddle-warp server.
+  return $ case maybeHost of
+    Just h | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h -> "http://localhost:8080/"
+    otherwise -> "/"
 
 getToken :: forall t m.
           ( R.MonadWidget t m
