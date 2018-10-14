@@ -5,7 +5,7 @@ import           Data.Text
 import qualified Data.Time    as Time
 import           GHC.Generics (Generic)
 
-newtype Token = Token Text
+newtype Token = Token {unToken :: Text}
   deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
 data LinkUrl = LinkUrl Text

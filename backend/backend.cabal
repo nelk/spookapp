@@ -14,6 +14,7 @@ library
                      , Spook.Server.Model
                      , Spook.Server.KeyPerm
                      , Spook.Server.Data
+                     , Spook.Server.Youtube
   build-depends:       base >= 4.7 && < 5
                      , common
                      , aeson
@@ -21,8 +22,14 @@ library
                      , base64-bytestring
                      , cipher-aes
                      , containers
+                     , data-default
+                     , servant
                      , servant-server
                      , servant-options
+                     , servant-client
+                     , http-client
+                     , http-client-tls
+                     , cookie
                      , wai
                      , wai-app-static
                      , wai-extra

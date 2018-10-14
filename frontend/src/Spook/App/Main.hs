@@ -94,9 +94,11 @@ htmlHead = do
 type RpcArg t a = R.Dynamic t (Either Text a)
 type RpcRes t m a = R.Event t ()
                  -> m (R.Event t (R.ReqResult () a))
-type GetSpookRpc t m = RpcArg t Token
-                    -> RpcRes t m (Either SpookFailure SpookData)
+type GetSpookRpc t m = RpcArg t Text
+                    -> RpcArg t Token
+                    -> RpcRes t m (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
 type NewSpookRpc t m = RpcArg t Text
+                    -> RpcArg t Text
                     -> RpcArg t Text
                     -> RpcArg t Token
                     -> RpcRes t m (Either SpookFailure [Token])
@@ -132,7 +134,7 @@ app = do
   basePath <- computeBasePath
   let ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
         = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
-      env = Env (\a b -> lift $ getSpookRpc a b) (\a b c d -> lift $ newSpookRpc a b c d) basePath
+      env = Env (\a b c -> lift $ getSpookRpc a b c) (\a b c d e -> lift $ newSpookRpc a b c d e) basePath
       unwrapReaderEnv w = runReaderT w env
   let lp :: App (Env t m) m () = landingPage
   unwrapReaderEnv lp
@@ -150,11 +152,11 @@ landingPage = do
   let doGetSpookE = R.leftmost [() <$ R.updated tokenDyn, postBuildE]
 
   getSpookRpc' :: GetSpookRpc t m <- view getSpookRpc
-  getSpookResultE <- getSpookRpc' tokenDyn doGetSpookE
+  getSpookResultE <- getSpookRpc' (R.constDyn $ Right "") tokenDyn doGetSpookE
 
   _ <- R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
-    (R.ResponseSuccess _ (Right spookData) _) -> void $ spookWidget spookData
-    (R.ResponseSuccess _ (Left spookFailure) _) -> void $ badTokenWidget spookFailure
+    (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> void $ spookWidget spookData
+    (R.ResponseSuccess _ (getResponse -> Left spookFailure) _) -> void $ badTokenWidget spookFailure
     (R.ResponseFailure _ _ _) -> badTokenWidget SpookTemporaryFailure
     (R.RequestFailure _ _) -> noTokenWidget
   return ()
