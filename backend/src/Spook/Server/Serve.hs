@@ -394,7 +394,7 @@ spookFetcherWorker context = do
         let doSearch = do
               response <- YT.searchYoutube (siteHttpManager context) $ YT.YoutubeRequest
                 { YT.key = siteYoutubeKey context
-                , YT.q = "2spooky4me"
+                , YT.q = "spooky meme"
                 , YT.maxResults = ytPageSize
                 , YT.part = "snippet"
                 , YT.pageToken = pageToken

@@ -143,6 +143,7 @@ landingPage :: forall t m env.
              ( R.MonadWidget t m
              , MonadReader env m
              , HasGetSpookRpc env t m
+             , HasNewSpookRpc env t m
              , HasBasePath env
              ) => m ()
 landingPage = do
@@ -223,20 +224,47 @@ getToken = do
   maybeTokenE <- R.holdDyn startToken newTokenMaybeE
   return $ maybe (Left "No token in path") Right <$> maybeTokenE
 
-spookWidget :: forall t m.
+data SpookWidgetState = SpookWidgetInitial | SpookWidgetNewTokens [Token] | SpookWidgetFailure SpookFailure
+
+spookWidget :: forall t m env.
              ( R.MonadWidget t m
+             , MonadReader env m
+             , HasNewSpookRpc env t m
+             , HasBasePath env
              ) => SpookData
-               -> m (R.Event t ())
+               -> m ()
 spookWidget spookData = do
+  newSpookRpc' :: NewSpookRpc t m <- view newSpookRpc
+  let wtf = R.constDyn $ Right ""
+
   F.div RM.mdcCard_ $ do
   -- RM.card_ "div" mempty $ do
-    F.section RM.mdcCardPrimary_ $ do
-    --RM.cardPrimary_ "section" mempty $ do
-      F.h1 RM.mdcCardTitleLarge_ $
-        R.text "You've Been Spooked!"
-      embedYoutube $ spookData ^. the @"videoUrl"
-    F.section RM.mdcCardActions_ $ do
-      RM.mdButton def $ R.text "Redeem My Spook"
+    rec
+      newSpooksResultE <- newSpookRpc' wtf wtf wtf (R.constDyn $ Right $ token spookData) getNewSpooksE
+
+      let widgetStateE = R.ffor newSpooksResultE $ \case
+            (R.ResponseSuccess _ (Right newSpookTokens) _) -> SpookWidgetNewTokens newSpookTokens
+            (R.ResponseSuccess _ (Left spookFailure) _) -> SpookWidgetFailure spookFailure
+            (R.ResponseFailure _ _ _) -> SpookWidgetFailure SpookTemporaryFailure
+            (R.RequestFailure _ _) -> SpookWidgetInitial
+
+      widgetStateDyn <- R.holdDyn SpookWidgetInitial widgetStateE
+
+      F.section RM.mdcCardPrimary_ $ do
+      --RM.cardPrimary_ "section" mempty $ do
+        F.h1 RM.mdcCardTitleLarge_ $
+          R.text "You've Been Spooked!"
+        embedYoutube $ spookData ^. the @"videoUrl"
+      getNewSpooksE <- F.section RM.mdcCardActions_ $ do
+        es <- R.dyn $ R.ffor widgetStateDyn $ \case
+          SpookWidgetInitial -> RM.mdButton def $ R.text "Spook Others"
+          SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
+          SpookWidgetNewTokens tokens -> do
+            basePath <- view getBasePath
+            forM_ tokens $ \(Token tok) -> R.text $ basePath <> "#" <> tok
+            return $ R.never
+        R.switchPromptly R.never es
+    return ()
 
 
 embedYoutube :: forall t m.
