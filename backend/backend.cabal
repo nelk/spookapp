@@ -120,6 +120,8 @@ test-suite spec
                      , text
                      , mtl
                      , http-types
+                     , http-client
+                     , http-client-tls
                      , hspec
                      , hspec-core
                      , wai

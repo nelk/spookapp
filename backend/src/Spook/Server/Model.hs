@@ -23,6 +23,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     createTime UTCTime MigrationOnly default=now()
     lastModifiedTime UTCTime MigrationOnly default=now()
     Primary token
+    UniqueToken token
     Foreign SavedSpook fkparent parentSpook
     Foreign Visitor fkcreator creator
     Foreign Visitor fkclaimer claimer
@@ -36,11 +37,13 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
   SpookVid
     vidId Text
     Primary vidId
+    UniqueVidId vidId
     deriving Generic Eq Show
 
   Visitor
     visitorId Text
     Primary visitorId
+    UniqueVisitorId visitorId
     deriving Generic Eq Show
 
   VisitedIp
@@ -48,6 +51,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     visitedCount Int
     redeemedSavedSpooks Int
     Primary visitedIp
+    UniqueVisitedIp visitedIp
     deriving Generic Eq Show
 |]
 

@@ -7,6 +7,8 @@
 
 module Spook.Server.ServeSpec where
 
+import           Control.Concurrent.MVar  (MVar)
+import qualified Control.Concurrent.MVar  as MVar
 import           Control.Lens
 import           Control.Monad.IO.Class   (liftIO)
 import           Control.Monad.Logger     (runNoLoggingT, runStderrLoggingT)
@@ -24,6 +26,8 @@ import           Data.Time.Calendar       (Day (..))
 import qualified Database.Esqueleto       as Es
 import qualified Database.Persist         as P
 import           Database.Persist.Sqlite
+import           Network.HTTP.Client      (newManager)
+import           Network.HTTP.Client.TLS  (tlsManagerSettings)
 import qualified Network.HTTP.Types       as Network
 import qualified Network.Wai              as Wai
 import qualified Network.Wai.Handler.Warp as Wai hiding (withApplication)
@@ -40,8 +44,20 @@ import           Spook.Server.Serve       (SiteContext (..), app)
 createPool :: IO Es.ConnectionPool
 createPool = runStderrLoggingT $ createSqlitePool ":memory:" 1
 
-mkApplication :: Es.ConnectionPool -> Wai.Application
-mkApplication dbPool = app $ SiteContext dbPool Nothing Nothing False
+mkApplication :: Es.ConnectionPool -> IO Wai.Application
+mkApplication dbPool = do
+  requestVidMVar <- MVar.newEmptyMVar
+  manager <- newManager tlsManagerSettings
+  return $ app $ SiteContext
+    { siteDbPool = dbPool
+    , siteServeIndexDirectory = Nothing
+    , siteServeStaticDirectory = Nothing
+    , siteAllowCrossOrigin = False
+    , siteRequestVidMVar = requestVidMVar
+    , siteHttpManager = manager
+    , siteYoutubeKey = "ytkey"
+    , siteYoutubeSearchDelay = realToFrac 2.0
+    }
 
 setupDb :: Es.ConnectionPool -> IO ()
 setupDb dbPool = flip runSqlPool dbPool $ do
@@ -86,10 +102,14 @@ withConnection action f connection = do
   action connection
 
 withApp ::  (Es.ConnectionPool -> S a) -> Es.ConnectionPool -> IO a
-withApp mkS dbPool = Wai.withApplication (mkApplication dbPool) $ mkS dbPool
+withApp mkS dbPool = do
+  app <- mkApplication dbPool
+  Wai.withApplication app $ mkS dbPool
 
 withApp_ ::  S a -> Es.ConnectionPool -> IO a
-withApp_ s dbPool = Wai.withApplication (mkApplication dbPool) s
+withApp_ s dbPool = do
+  app <- mkApplication dbPool
+  Wai.withApplication app s
 
 spec :: Spec
 spec = return ()

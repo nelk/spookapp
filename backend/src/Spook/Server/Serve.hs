@@ -52,6 +52,7 @@ import Control.Concurrent (forkIO, threadDelay)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool, runMigration, SqlBackend)
 import qualified Database.Esqueleto as Es
+import qualified Database.Persist as Persist
 import Data.Pool (Pool)
 
 import Spook.Common.Model
@@ -151,19 +152,19 @@ insertTestData = do {- forM_ testData $ \savedSpook -> do
   -}
   let visitorId = "nelk"
       vidId = "oJqc4vByZCc"
-  _ <- Es.insert $ Visitor {visitorVisitorId = visitorId}
-  _ <- Es.insert $ SpookVid {spookVidVidId = vidId }
-  _ <- Es.insert $ SavedSpook
+  _ <- Es.upsert (Visitor {visitorVisitorId = visitorId}) []
+  _ <- Es.upsert (SpookVid {spookVidVidId = vidId }) []
+  _ <- Es.upsert (SavedSpook
       { savedSpookToken = "abc12401"
       , savedSpookParentSpook = Nothing
-      , savedSpookVisits = 1
+      , savedSpookVisits = 0
       , savedSpookIp = Nothing
       , savedSpookReferrer = Nothing
       , savedSpookChildSpookCount = 0
       , savedSpookCreator = visitorId
       , savedSpookClaimer = Nothing
       , savedSpookVidId = vidId
-      }
+      }) [ SavedSpookClaimer Persist.=. Nothing, SavedSpookVisits Persist.=. 0 ]
   return ()
 
 createVideoUrl :: Text -> Text
@@ -423,7 +424,7 @@ spookFetcherWorker context = do
           -- No requests, below threshold, search.
           (vs, Nothing, _) | length vs < ytBufferThreshold -> doSearch
           -- No requests, above threshold, just wait a while.
-          (vs, Nothing, _) -> do
+          (_, Nothing, _) -> do
             threadDelay 500000 -- micro seconds
             loop spookVids spookVidPage lastSearchTime lastSearchError
           -- Out of vids, no error last time, do search anyway (this case shouldn't happen).
