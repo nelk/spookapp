@@ -75,10 +75,13 @@ data Params = Params
   , serveIndexDirectory :: Maybe FilePath
   , serveStaticDirectory :: Maybe FilePath
   , allowCrossOrigin :: Bool
+  , secureCookie :: Bool
   , youtubeKey :: Text
   , youtubeSearchDelay :: Maybe Double
   }
   deriving (Show, Generic)
+
+-- TODO: Set secure cookie true in prod, set yt key in nixops configs.
 
 instance OG.ParseRecord Params
 
@@ -96,6 +99,7 @@ data SiteContext = SiteContext
   , siteServeIndexDirectory :: Maybe FilePath
   , siteServeStaticDirectory :: Maybe FilePath
   , siteAllowCrossOrigin :: Bool
+  , siteSecureCookie :: Bool
   -- TODO: Split off into separate type class.
   , siteRequestVidMVar :: MVar (MVar (Either SpookFailure SpookVid)) -- To request, create new mvar, put that mvar into this value, then block on your mvar.
   , siteHttpManager :: Manager
@@ -136,6 +140,7 @@ startApp = do
         , siteServeIndexDirectory = serveIndexDirectory params
         , siteServeStaticDirectory = serveStaticDirectory params
         , siteAllowCrossOrigin = allowCrossOrigin params
+        , siteSecureCookie = secureCookie params
         , siteYoutubeKey = youtubeKey params
         , siteYoutubeSearchDelay = realToFrac $ fromMaybe 2.0 $ youtubeSearchDelay params
         }
@@ -186,8 +191,9 @@ app context =
 convertApp :: SiteContext -> App :~> Handler
 convertApp cfg = NT (flip runReaderT cfg . runApp)
 
+-- TODO - compilation hangs. Probably can't put headers ahead of api stuff...
 server :: SiteContext -> Server FullApi
-server context = enter (convertApp context) ((getSpookHandler :<|> newSpookHandler) {- :<|> indexHandler -} ) :<|> rawHandler context
+server context = enter (convertApp context) ((getSpookHandler :<|> newSpookHandler ) {- :<|> indexHandler -} ) :<|> rawHandler context
 
 getAddrIpAsText :: Maybe Text -> SockAddr -> Maybe Text
 getAddrIpAsText (Just realIpHeader) _ | not (Text.null realIpHeader) = Just realIpHeader
@@ -247,10 +253,11 @@ cookieToVisitor maybeCookie = runMaybeT $ do
   visId <- MaybeT $ pure $ lookup cookieKey cookies
   MaybeT $ getVisitor $ VisitorKey $ Text.decodeUtf8 visId
 
-getSpookHandler :: Maybe Text -> Token -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
-getSpookHandler maybeCookie token = do
+getSpookHandler :: Maybe Text -> Maybe Text -> Maybe Text -> SockAddr -> Token -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
+getSpookHandler maybeCookie _ _ _ token = do
   maybeVisitor <- cookieToVisitor maybeCookie
   maybeSpook <- getSpookByToken token
+  setSecureCookie <- view (the @"siteSecureCookie")
 
   let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
       handle Nothing _ = return $ noHeader $ Left SpookDoesNotExist
@@ -268,7 +275,7 @@ getSpookHandler maybeCookie token = do
                          , Cookie.setCookieValue = Text.encodeUtf8 $ unToken visitorId
                          , Cookie.setCookieMaxAge = Just $ fromIntegral (60 * 24 * 60 * 60 :: Int) -- 60 days in seconds.
                          , Cookie.setCookieHttpOnly = True
-                         , Cookie.setCookieSecure = True
+                         , Cookie.setCookieSecure = setSecureCookie
                          }
         return $ addCookie cookie $ Right $ SpookData
           { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
@@ -400,6 +407,7 @@ spookFetcherWorker context = do
                 , YT.part = "snippet"
                 , YT.pageToken = pageToken
                 }
+              putStrLn $ "Response from YT search: " <> show response
               case response of
                 Left servantError -> loop spookVids spookVidPage (Just time) (Just SpookTemporaryFailure)
                 Right searchResult -> do

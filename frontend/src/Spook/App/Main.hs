@@ -94,13 +94,9 @@ htmlHead = do
 type RpcArg t a = R.Dynamic t (Either Text a)
 type RpcRes t m a = R.Event t ()
                  -> m (R.Event t (R.ReqResult () a))
-type GetSpookRpc t m = RpcArg t Text
-                    -> RpcArg t Token
+type GetSpookRpc t m = RpcArg t Token
                     -> RpcRes t m (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
-type NewSpookRpc t m = RpcArg t Text
-                    -> RpcArg t Text
-                    -> RpcArg t Text
-                    -> RpcArg t Token
+type NewSpookRpc t m = RpcArg t Token
                     -> RpcRes t m (Either SpookFailure [Token])
 
 class HasGetSpookRpc env t m where
@@ -134,7 +130,7 @@ app = do
   basePath <- computeBasePath
   let ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
         = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
-      env = Env (\a b c -> lift $ getSpookRpc a b c) (\a b c d e -> lift $ newSpookRpc a b c d e) basePath
+      env = Env (\a b -> lift $ getSpookRpc a b) (\a b -> lift $ newSpookRpc a b) basePath
       unwrapReaderEnv w = runReaderT w env
   let lp :: App (Env t m) m () = landingPage
   unwrapReaderEnv lp
@@ -153,7 +149,7 @@ landingPage = do
   let doGetSpookE = R.leftmost [() <$ R.updated tokenDyn, postBuildE]
 
   getSpookRpc' :: GetSpookRpc t m <- view getSpookRpc
-  getSpookResultE <- getSpookRpc' (R.constDyn $ Right "") tokenDyn doGetSpookE
+  getSpookResultE <- getSpookRpc' tokenDyn doGetSpookE
 
   _ <- R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
     (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> void $ spookWidget spookData
@@ -235,12 +231,11 @@ spookWidget :: forall t m env.
                -> m ()
 spookWidget spookData = do
   newSpookRpc' :: NewSpookRpc t m <- view newSpookRpc
-  let wtf = R.constDyn $ Right ""
 
   F.div RM.mdcCard_ $ do
   -- RM.card_ "div" mempty $ do
     rec
-      newSpooksResultE <- newSpookRpc' wtf wtf wtf (R.constDyn $ Right $ token spookData) getNewSpooksE
+      newSpooksResultE <- newSpookRpc' (R.constDyn $ Right $ token spookData) getNewSpooksE
 
       let widgetStateE = R.ffor newSpooksResultE $ \case
             (R.ResponseSuccess _ (Right newSpookTokens) _) -> SpookWidgetNewTokens newSpookTokens

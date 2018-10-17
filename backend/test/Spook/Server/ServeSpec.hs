@@ -53,6 +53,7 @@ mkApplication dbPool = do
     , siteServeIndexDirectory = Nothing
     , siteServeStaticDirectory = Nothing
     , siteAllowCrossOrigin = False
+    , siteSecureCookie = False
     , siteRequestVidMVar = requestVidMVar
     , siteHttpManager = manager
     , siteYoutubeKey = "ytkey"
