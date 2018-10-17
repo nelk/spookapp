@@ -178,7 +178,8 @@ createVideoUrl id' = "https://www.youtube.com/embed/" <> id' <> "?autoplay=1&rel
 
 app :: SiteContext -> Application
 app context =
- let policy = simpleCorsResourcePolicy { corsRequestHeaders = ["Content-Type"] }
+ -- TODO: Set-Cookie still not working (at least on localhost)
+ let policy = simpleCorsResourcePolicy { corsOrigins = Just (["http://localhost:8008", "http://localhost:3003"], True), corsRequestHeaders = ["Content-Type"] } -- TODO: Set allowed origins from flag.
      corsMiddleware
        | siteAllowCrossOrigin context =
            cors (const $ Just policy) . provideOptions (Proxy :: Proxy Api)
@@ -384,7 +385,7 @@ spookFetcherWorker context = do
 
   unusedSpookVids :: [Es.Entity SpookVid] <- runSql' $ Es.select $ Es.from $ \(spookVid `Es.LeftOuterJoin` savedSpook) -> do
     Es.on $ Es.just (spookVid Es.^. SpookVidVidId) Es.==. savedSpook Es.?. SavedSpookVidId
-    Es.where_ $ Es.nothing Es.==. savedSpook Es.?. SavedSpookId
+    Es.where_ $ Es.isNothing (savedSpook Es.?. SavedSpookId) -- Note: Note the same as Es.==. Es.nothing
     return spookVid
 
   (headMay -> firstSpookVidPage :: Maybe (Es.Entity SpookVidPage)) <-
@@ -415,6 +416,7 @@ spookFetcherWorker context = do
                   let newSpookVids = (SpookVid . YT.videoId) <$> YT.resources searchResult
                       spookVidPage' = (SpookVidPage $ YT.nextPageToken searchResult)
                   spookVidPageId <- runSql' $ do
+                    -- TODO: Upsert to allow ignoring duplicates.
                     forM_ newSpookVids $ Es.insert
                     case spookVidPage of
                       Just pageEnt -> do
