@@ -22,6 +22,12 @@ clzMaterialIcons :: F.CssClass
 clzMaterialIcons = "material-icons"
 ------
 
+clzSpookCard :: F.CssClass
+clzSpookCard = "spook-card"
+
+clzNewSpookList :: F.CssClass
+clzNewSpookList = "new-spook-list"
+
 clzTokenWrapper :: F.CssClass
 clzTokenWrapper = "token-wrapper"
 
@@ -341,11 +347,14 @@ css = do
     )
 
   -- TODO - Delete all unused parts.
-  clz clzTokenWrapper Clay.? do
-    fullWidth
-  Clay.textarea Clay.? do
-    "resize" Clay.-: "none"
-    Clay.width $ Clay.pct 50
+  clz clzSpookCard Clay.? do
+    clz clzTokenWrapper Clay.? do
+      fullWidth
+    Clay.textarea Clay.? do
+      "resize" Clay.-: "none"
+      Clay.width $ Clay.pct 50
+    clz clzNewSpookList Clay.? do
+      Clay.flexDirection Clay.column
 
   clz clzRoot Clay.? do
     fullWidth

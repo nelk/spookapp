@@ -252,8 +252,7 @@ spookWidget :: forall t m env.
 spookWidget spookData = do
   newSpookRpc' :: NewSpookRpc t m <- view newSpookRpc
 
-  F.div RM.mdcCard_ $ do
-  -- RM.card_ "div" mempty $ do
+  F.div [RM.mdcCard_, S.clzSpookCard] $ do
     rec
       newSpooksResultE <- newSpookRpc' (R.constDyn $ Right $ token spookData) getNewSpooksE
 
@@ -266,11 +265,10 @@ spookWidget spookData = do
       widgetStateDyn <- R.holdDyn SpookWidgetInitial widgetStateE
 
       F.section RM.mdcCardPrimary_ $ do
-      --RM.cardPrimary_ "section" mempty $ do
         F.h1 RM.mdcCardTitleLarge_ $
           R.text "You've Been Spooked!"
         embedYoutube $ spookData ^. the @"videoUrl"
-      getNewSpooksE <- F.section RM.mdcCardActions_ $ do
+      getNewSpooksE <- F.section [RM.mdcCardActions_, S.clzNewSpookList] $ do
         es <- R.dyn $ R.ffor widgetStateDyn $ \case
           SpookWidgetInitial -> RM.mdButton def $ R.text "Spook Others"
           SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
@@ -279,21 +277,9 @@ spookWidget spookData = do
             forM_ tokens $ \(Token tok) -> do
               F.div S.clzTokenWrapper $ do
                 let link = appPath <> "#" <> tok
-                {-
-const copyToClipboard = str => {
-  const el = document.createElement('textarea');
-  el.value = str;
-  document.body.appendChild(el);
-  el.select();
-  document.execCommand('copy');
-  document.body.removeChild(el);
-};
-                -}
                 textArea <- R.textArea $ R.TextAreaConfig link R.never $ R.constDyn (Map.fromList [("readonly", ""), ("rows", "1")])
-                (buttonEl, _) <- RT.button' $ R.text "Copy to Clipboard"
+                (buttonEl, _) <- RT.button' $ R.text "Copy"
                 jsContextRef <- Dom.askJSM
-                -- execCommand only works on a direct user even handler.
-                -- R.performEvent_ $ R.ffor copyE $ const $ runJSaddle jsContextRef $ do
                 copyListener <- Dom.liftJSM $ EventM.newListener $ do
                   HTMLTextAreaElement.select $ R._textArea_element textArea
                   window <- Dom.currentWindowUnchecked
