@@ -169,7 +169,7 @@ insertTestData = do {- forM_ testData $ \savedSpook -> do
       , savedSpookCreator = visitorId
       , savedSpookClaimer = Nothing
       , savedSpookVidId = vidId
-      }) [ SavedSpookClaimer Persist.=. Nothing, SavedSpookVisits Persist.=. 0 ]
+      }) [ SavedSpookClaimer Persist.=. Nothing, SavedSpookVisits Persist.=. 0, SavedSpookChildSpookCount Persist.=. 0 ]
   return ()
 
 createVideoUrl :: Text -> Text
@@ -332,6 +332,15 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
                   Es.set s [ SavedSpookChildSpookCount Es.=. Es.val (length newVids) ]
                   Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
                 return $ Right newTokens
+
+      handle (Just spook) (Just visitor)
+        | savedSpookClaimer spook == Just (visitorVisitorId visitor)
+        && savedSpookChildSpookCount spook > 0 = do
+          alreadyCreatedChildSpooks :: [Es.Entity SavedSpook] <- runSql $ Es.select $ Es.from $ \savedSpook -> do
+            Es.where_ $ savedSpook Es.^. SavedSpookParentSpook Es.==. Es.just (Es.val $ savedSpookToken spook)
+            return savedSpook
+          return $ Right $ (Token . savedSpookToken . Es.entityVal) <$> alreadyCreatedChildSpooks
+
       handle _ _ = return $ Left SpookDoesNotExist
 
   result <- handle maybeSpook maybeVisitor

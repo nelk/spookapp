@@ -12,6 +12,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Monoid ((<>))
 import qualified Reflex.Dom as R
 import qualified Reflex.Dom.Main
+import qualified Reflex.Dom.Widget.Input as R
 import qualified Servant.Reflex as R
 import qualified Reflex.Material.Basic as RM
 import qualified Reflex.Material.Card as RM
@@ -31,13 +32,20 @@ import Data.Either (isLeft)
 import Data.Maybe (isJust, fromMaybe)
 import qualified Data.Map as Map
 import Language.Javascript.JSaddle.Monad (runJSaddle)
-import qualified JSDOM as Dom (currentWindow)
+import qualified Language.Javascript.JSaddle   as Js
+import qualified JSDOM as Dom (currentWindow, currentWindowUnchecked)
 import qualified JSDOM.Types as Dom
 import qualified JSDOM.Document as Document
 import qualified JSDOM.Window as Window
 import qualified JSDOM.Location as Location
 import qualified JSDOM.EventM as EventM (newListener, addListener)
+import qualified JSDOM.Event as Event (initEvent)
 import qualified JSDOM.WindowEventHandlers as WindowEventHandlers (hashChange)
+import qualified JSDOM.GlobalEventHandlers as GlobalEventHandlers (click)
+import qualified JSDOM.EventTarget as EventTarget
+import qualified JSDOM.ClipboardEvent as ClipboardEvent
+import qualified JSDOM.HTMLTextAreaElement as HTMLTextAreaElement
+import qualified JSDOM.HTMLButtonElement as HTMLButtonElement
 
 import Paths_frontend (getDataFileName)
 import Spook.Common.Model
@@ -76,7 +84,7 @@ htmlHead = do
     -}
 
     -- R.elAttr "meta" (Map.fromList [("name", "viewport"), ("content", "width=device-width, initial-scale=1.0")]) $ return ()
-    basePath <- computeBasePath
+    basePath <- computeApiPath
     forM_ ["shortcut icon", "icon"] $ \rel ->
       R.elAttr "link" (Map.fromList [("rel", rel), ("href", basePath <> "static/favicon.ico"), ("type", "image/icon")]) $ return ()
     -- mapM_ stylesheet Assets.bootstrapCssPaths
@@ -106,14 +114,16 @@ class HasNewSpookRpc env t m where
   newSpookRpc :: Lens' env (NewSpookRpc t m)
 
 class HasBasePath env where
-  getBasePath :: Lens' env Text
+  getApiPath :: Lens' env Text
+  getAppPath :: Lens' env Text
 
 type App env reflexM = ReaderT env reflexM
 
 data Env t (reflexM :: * -> *) = Env
   { envGetSpookRpc :: GetSpookRpc t (App (Env t reflexM) reflexM)
   , envNewSpookRpc :: NewSpookRpc t (App (Env t reflexM) reflexM)
-  , envBasePath :: Text
+  , envApiPath :: Text
+  , envAppPath :: Text
   } deriving Generic
 
 instance HasGetSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
@@ -123,14 +133,22 @@ instance HasNewSpookRpc (Env t reflexM) t (App (Env t reflexM) reflexM) where
   newSpookRpc = the @"envNewSpookRpc"
 
 instance HasBasePath (Env t reflexM) where
-  getBasePath = the @"envBasePath"
+  getApiPath = the @"envApiPath"
+  getAppPath = the @"envAppPath"
 
 app :: forall t m. R.MonadWidget t m => m ()
 app = do
-  basePath <- computeBasePath
-  let ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
-        = R.client (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath basePath)
-      env = Env (\a b -> lift $ getSpookRpc a b) (\a b -> lift $ newSpookRpc a b) basePath
+  maybeLocation <- getLocation
+  apiPath <- computeApiPath
+  let tweakRequest = R.ClientOptions $ \r -> return $ r & R.withCredentials .~ True
+      ((getSpookRpc :: GetSpookRpc t m) :<|> (newSpookRpc :: NewSpookRpc t m))
+        = R.clientWithOpts (Proxy :: Proxy Api) (Proxy :: Proxy m) (Proxy :: Proxy ()) (R.constDyn $ R.BasePath apiPath) tweakRequest
+      env = Env
+        { envGetSpookRpc = (\a b -> lift $ getSpookRpc a b)
+        , envNewSpookRpc = (\a b -> lift $ newSpookRpc a b)
+        , envApiPath = apiPath
+        , envAppPath = maybe "https://spook.app" (\(protocol, host) -> protocol <> "//" <> host) maybeLocation
+        }
       unwrapReaderEnv w = runReaderT w env
   let lp :: App (Env t m) m () = landingPage
   unwrapReaderEnv lp
@@ -170,30 +188,32 @@ badTokenWidget :: forall t m env.
                 ) => SpookFailure
                   -> m ()
 badTokenWidget failure = do
-  basePath <- view getBasePath
+  basePath <- view getApiPath
   F.img (F.srcAttr, basePath <> "static/dootdoot.gif" :: Text) $ return ()
   R.text $ badTokenText failure
 
 noTokenWidget :: forall t m. R.DomBuilder t m => m ()
 noTokenWidget = R.text "Welcome! You'll need to receive a unique spook from someone else."
 
-getHost :: forall m.
+getLocation :: forall m.
           ( Dom.MonadJSM m
-          ) => m (Maybe Text)
-getHost = runMaybeT $ do
+          ) => m (Maybe (Text, Text))
+getLocation = runMaybeT $ do
   window <- MaybeT Dom.currentWindow
   document <- lift $ Window.getDocument window
   location <- MaybeT $ Document.getLocation document
-  Location.getHost location
+  protocol <- Location.getProtocol location
+  host <- Location.getHost location
+  return (protocol, host)
 
-computeBasePath :: forall m.
+computeApiPath :: forall m.
              ( Dom.MonadJSM m
              ) => m Text
-computeBasePath = do
-  maybeHost <- getHost
+computeApiPath = do
+  maybeLoc <- getLocation
   -- For local development, always fetch on :8080, even if we're served from jsaddle-warp server.
-  return $ case maybeHost of
-    Just h | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h -> "http://localhost:8080/"
+  return $ case maybeLoc of
+    Just (_, h) | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h -> "http://localhost:8080/"
     otherwise -> "/"
 
 getToken :: forall t m.
@@ -255,8 +275,34 @@ spookWidget spookData = do
           SpookWidgetInitial -> RM.mdButton def $ R.text "Spook Others"
           SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
           SpookWidgetNewTokens tokens -> do
-            basePath <- view getBasePath
-            forM_ tokens $ \(Token tok) -> R.text $ basePath <> "#" <> tok
+            appPath <- view getAppPath
+            forM_ tokens $ \(Token tok) -> do
+              F.div S.clzTokenWrapper $ do
+                let link = appPath <> "#" <> tok
+                {-
+const copyToClipboard = str => {
+  const el = document.createElement('textarea');
+  el.value = str;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+};
+                -}
+                textArea <- R.textArea $ R.TextAreaConfig link R.never $ R.constDyn (Map.fromList [("readonly", ""), ("rows", "1")])
+                (buttonEl, _) <- RT.button' $ R.text "Copy to Clipboard"
+                jsContextRef <- Dom.askJSM
+                -- execCommand only works on a direct user even handler.
+                -- R.performEvent_ $ R.ffor copyE $ const $ runJSaddle jsContextRef $ do
+                copyListener <- Dom.liftJSM $ EventM.newListener $ do
+                  HTMLTextAreaElement.select $ R._textArea_element textArea
+                  window <- Dom.currentWindowUnchecked
+                  document <- Window.getDocument window
+                  Document.execCommand document ("copy" :: Text) False (Nothing @Text)
+                  return ()
+                Just buttonHtmlEl <- Dom.castTo HTMLButtonElement.HTMLButtonElement $ R._el_element buttonEl
+                Dom.liftJSM $ EventM.addListener buttonHtmlEl GlobalEventHandlers.click copyListener True
+                return ()
             return $ R.never
         R.switchPromptly R.never es
     return ()

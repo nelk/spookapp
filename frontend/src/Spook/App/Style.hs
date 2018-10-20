@@ -22,6 +22,9 @@ clzMaterialIcons :: F.CssClass
 clzMaterialIcons = "material-icons"
 ------
 
+clzTokenWrapper :: F.CssClass
+clzTokenWrapper = "token-wrapper"
+
 clzDisplayNone :: F.CssClass
 clzDisplayNone = "display-none"
 
@@ -336,6 +339,13 @@ css = do
     Clay.height $ Clay.pct 100
     Clay.backgroundColor $ Clay.rgba 0 0 0 0
     )
+
+  -- TODO - Delete all unused parts.
+  clz clzTokenWrapper Clay.? do
+    fullWidth
+  Clay.textarea Clay.? do
+    "resize" Clay.-: "none"
+    Clay.width $ Clay.pct 50
 
   clz clzRoot Clay.? do
     fullWidth
