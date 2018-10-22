@@ -56,7 +56,7 @@ import qualified Database.Persist as Persist
 import Data.Pool (Pool)
 
 import Spook.Common.Model
-import Spook.Common.Api (FullApi, Api, AccessControlAllowOriginHeader, SetCookieHeader)
+import Spook.Common.Api (FullApi, ServerApi, AccessControlAllowOriginHeader, SetCookieHeader)
 import Spook.Server.Model
 import Spook.Server.Data (eventTime)
 import qualified Spook.Server.Youtube as YT
@@ -179,10 +179,10 @@ createVideoUrl id' = "https://www.youtube.com/embed/" <> id' <> "?autoplay=1&rel
 app :: SiteContext -> Application
 app context =
  -- TODO: Set-Cookie still not working (at least on localhost)
- let policy = simpleCorsResourcePolicy { corsOrigins = Just (["http://localhost:8008", "http://localhost:3003"], True), corsRequestHeaders = ["Content-Type"] } -- TODO: Set allowed origins from flag.
+ let policy = simpleCorsResourcePolicy { corsOrigins = Just (["http://localhost:8080", "http://localhost:3003"], True), corsRequestHeaders = ["Content-Type"] } -- TODO: Set allowed origins from flag.
      corsMiddleware
        | siteAllowCrossOrigin context =
-           cors (const $ Just policy) . provideOptions (Proxy :: Proxy Api)
+           cors (const $ Just policy) . provideOptions (Proxy :: Proxy ServerApi)
        | otherwise = id
  in logStdoutDev
     $ corsMiddleware
@@ -210,7 +210,7 @@ getAddrIpAsText _ _ = Nothing
 -- |Create a base64url-encoded random 128-bit string.
 generateToken :: App Token
 generateToken = do
-  bs :: Bs.ByteString <- liftIO $ liftA Bs.pack $ replicateM 16 (randomIO :: IO Word8)
+  bs :: Bs.ByteString <- liftIO $ liftA Bs.pack $ replicateM 18 (randomIO :: IO Word8)
   let bs64 = Bs64Url.encode bs
   return $ Token $ Text.decodeUtf8 bs64
 
@@ -293,8 +293,14 @@ getSpookHandler maybeCookie _ _ _ token = do
           , numSpooked = savedSpookChildSpookCount spook
           }
 
-      -- Claimed another already.
-      handle _ _ = return $ noHeader $ Left SpookDoesNotExist
+      -- Someone else claimed this spook already.
+      handle (Just spook) (Just visitor)
+        | isJust (savedSpookClaimer spook)
+        && savedSpookClaimer spook /= Just (visitorVisitorId visitor) =
+          return $ noHeader $ Left SpookAlreadyClaimed
+
+      -- Visitor already claimed another spook.
+      handle _ _ = return $ noHeader $ Left VisitorAlreadyClaimedSpook
 
   result <- handle maybeSpook maybeVisitor
   liftIO $ putStrLn $ "getSpookHandler\ncookie: " <> show maybeCookie <> "\ntoken: " <> show token <> "\nresult: " <> show (getResponse result)
@@ -362,7 +368,8 @@ rawHandler context =
   let
     rawHandler' req respond
       | "/static/" `Bs.isPrefixOf` rawPathInfo req && isJust (siteServeStaticDirectory context) =
-        Wai.staticApp (Wai.defaultWebAppSettings $ fromJust $ siteServeStaticDirectory context) req respond
+        let wrappedResponder = respond -- respond . mapResponseHeaders (("Access-Control-Allow-Origin", "http://localhost:3003"):) -- Seems to already add this, don't double-add. Needed for font.
+        in Wai.staticApp (Wai.defaultWebAppSettings $ fromJust $ siteServeStaticDirectory context) req wrappedResponder
       | isJust (siteServeIndexDirectory context) =
         Wai.staticApp ((Wai.defaultWebAppSettings $ fromJust $ siteServeIndexDirectory context) { Wai.ssIndices = [Wai.unsafeToPiece "index.html"] }) req respond
     rawHandler' _ respond = respond $ responseLBS status404

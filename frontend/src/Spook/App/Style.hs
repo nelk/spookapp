@@ -12,8 +12,8 @@ import Data.Monoid ((<>))
 
 import qualified Spook.App.Fluent as F
 
-rawCss :: Text
-rawCss = LazyText.toStrict $ Clay.render css
+rawCss :: Text -> Text
+rawCss serverPath = LazyText.toStrict $ Clay.render $ css serverPath
 
 -- TODO: Quasiquoter for generating all of the below from list of class names.
 
@@ -22,8 +22,32 @@ clzMaterialIcons :: F.CssClass
 clzMaterialIcons = "material-icons"
 ------
 
+mdcThemePrimary :: F.CssClass
+mdcThemePrimary = "mdc-theme--primary"
+
+mdcThemeBackground :: F.CssClass
+mdcThemeBackground = "mdc-theme--background"
+
 clzSpookCard :: F.CssClass
 clzSpookCard = "spook-card"
+
+clzSpookSection :: F.CssClass
+clzSpookSection = "spook-section"
+
+clzSpookTitle :: F.CssClass
+clzSpookTitle = "spook-title"
+
+clzSpookMessage :: F.CssClass
+clzSpookMessage = "spook-message"
+
+clzSpookVid :: F.CssClass
+clzSpookVid = "spook-vid"
+
+clzSpookButton :: F.CssClass
+clzSpookButton = "spook-button"
+
+clzBigButton :: F.CssClass
+clzBigButton = "big-button"
 
 clzNewSpookList :: F.CssClass
 clzNewSpookList = "new-spook-list"
@@ -244,6 +268,9 @@ clzScheduleStepAddress = "schedule-step-address"
 clzScheduleMap :: F.CssClass
 clzScheduleMap = "schedule-map"
 
+animBlink :: IsString s => s
+animBlink = "blink"
+
 animFadeIn :: IsString s => s
 animFadeIn = "fade-in"
 
@@ -261,6 +288,9 @@ byClass = Clay.byClass . F.unCssClass
 
 clz :: F.CssClass -> Clay.Selector
 clz = (Clay.star Clay.#) . byClass
+
+fontScareArms :: Clay.Css
+fontScareArms = Clay.fontFamily ["Scare Arms"] [Clay.sansSerif]
 
 fontMerriweather :: Clay.Css
 fontMerriweather = Clay.fontFamily ["Merriweather Sans"] [Clay.sansSerif]
@@ -326,8 +356,14 @@ desktop = Clay.query Clay.all [ClayMedia.minWidth desktopWidth]
 mobile :: Clay.Css -> Clay.Css
 mobile = Clay.query ClayMedia.screen [ClayMedia.maxWidth desktopWidth]
 
-css :: Clay.Css
-css = do
+css :: Text -> Clay.Css
+css serverPath = do
+  Clay.keyframes animBlink
+    [ (0, fullOpacity)
+    , (50, zeroOpacity)
+    , (100, fullOpacity)
+    ]
+
   Clay.keyframesFromTo
     animFadeIn
     zeroOpacity
@@ -346,15 +382,63 @@ css = do
     Clay.backgroundColor $ Clay.rgba 0 0 0 0
     )
 
+  Clay.body Clay.? do
+    "--mdc-theme-primary" Clay.-: "#e09100"
+    "--mdc-theme-background" Clay.-: "#060300bf"
+    Clay.backgroundColor Clay.black
+
+  Clay.fontFace $ do
+    Clay.fontFamily ["Scare Arms"] []
+    Clay.fontFaceSrc [Clay.FontFaceSrcUrl (serverPath <> "static/scare_arms.otf") $ Just Clay.OpenType]
+
   -- TODO - Delete all unused parts.
   clz clzSpookCard Clay.? do
+    fontScareArms
+    let m = Clay.px 30 in Clay.padding m m m m
+    Clay.display Clay.flex
+    Clay.alignItems Clay.center
+
+    clz clzSpookSection Clay.? do
+      Clay.display Clay.flex
+      Clay.flexDirection Clay.column
+      Clay.width $ Clay.pct 90
+
+    clz clzSpookMessage Clay.? do
+      Clay.fontWeight $ Clay.weight 400
+
+    clz clzSpookTitle Clay.? do
+      -- let m = Clay.px 30 in Clay.margin m m m m
+      Clay.animation animBlink (Clay.ms 1000) Clay.stepStart (Clay.ms 0) Clay.infinite Clay.normal Clay.forwards
+      Clay.fontWeight $ Clay.weight 400
+      Clay.fontSize $ Clay.em 2.5
+
+    clz clzSpookVid Clay.? do
+      Clay.marginTop $ Clay.px 20
+      Clay.marginBottom $ Clay.px 30
+
     clz clzTokenWrapper Clay.? do
       fullWidth
+      Clay.height $ Clay.px 32
+      Clay.display Clay.flex
+      Clay.alignItems Clay.center
+
     Clay.textarea Clay.? do
       "resize" Clay.-: "none"
       Clay.width $ Clay.pct 50
+      Clay.marginRight $ Clay.px 30
+      Clay.height $ Clay.px 18
+
     clz clzNewSpookList Clay.? do
       Clay.flexDirection Clay.column
+      Clay.alignItems Clay.flexStart
+
+    clz clzSpookButton Clay.? do
+      Clay.button Clay.? do
+        fontScareArms
+    clz clzBigButton Clay.? do
+      Clay.button Clay.? do
+        Clay.fontSize $ Clay.em 1.8
+        Clay.height $ Clay.px 55
 
   clz clzRoot Clay.? do
     fullWidth

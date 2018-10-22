@@ -84,16 +84,16 @@ htmlHead = do
     -}
 
     -- R.elAttr "meta" (Map.fromList [("name", "viewport"), ("content", "width=device-width, initial-scale=1.0")]) $ return ()
-    basePath <- computeApiPath
+    apiPath <- computeApiPath
     forM_ ["shortcut icon", "icon"] $ \rel ->
-      R.elAttr "link" (Map.fromList [("rel", rel), ("href", basePath <> "static/favicon.ico"), ("type", "image/icon")]) $ return ()
+      R.elAttr "link" (Map.fromList [("rel", rel), ("href", apiPath <> "static/favicon.ico"), ("type", "image/icon")]) $ return ()
     -- mapM_ stylesheet Assets.bootstrapCssPaths
     -- stylesheet "https://fonts.googleapis.com/css?family=Alex+Brush"
     -- stylesheet "https://fonts.googleapis.com/css?family=Merriweather+Sans:300,400"
     -- stylesheet "https://fonts.googleapis.com/css?family=Nova+Mono"
     RM.stylesheet_ "https://fonts.googleapis.com/icon?family=Material+Icons"
 
-    RM.style_ S.rawCss
+    RM.style_ $ S.rawCss apiPath
     RM.stylesheet_ "https://unpkg.com/material-components-web@latest/dist/material-components-web.min.css"
 
     RM.script_ "https://unpkg.com/material-components-web@latest/dist/material-components-web.min.js"
@@ -169,15 +169,18 @@ landingPage = do
   getSpookRpc' :: GetSpookRpc t m <- view getSpookRpc
   getSpookResultE <- getSpookRpc' tokenDyn doGetSpookE
 
-  _ <- R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
-    (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> void $ spookWidget spookData
-    (R.ResponseSuccess _ (getResponse -> Left spookFailure) _) -> void $ badTokenWidget spookFailure
-    (R.ResponseFailure _ _ _) -> badTokenWidget SpookTemporaryFailure
-    (R.RequestFailure _ _) -> noTokenWidget
+  F.div [RM.mdcCard_, S.mdcThemeBackground, S.clzSpookCard] $ do
+    F.section [RM.mdcCardPrimary_, S.clzSpookSection] $
+      R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
+        (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> void $ spookWidget spookData
+        (R.ResponseSuccess _ (getResponse -> Left spookFailure) _) -> void $ badTokenWidget spookFailure
+        (R.ResponseFailure _ _ _) -> badTokenWidget SpookTemporaryFailure
+        (R.RequestFailure _ _) -> noTokenWidget
   return ()
 
 badTokenText :: SpookFailure -> Text
 badTokenText SpookAlreadyClaimed = "This spook has already been claimed"
+badTokenText VisitorAlreadyClaimedSpook = "You've already claimed a spook - send this one to a friend!"
 badTokenText SpookDoesNotExist = "This spook does not exist"
 badTokenText SpookTemporaryFailure = "We had a temporary issue. Try reloading the page"
 
@@ -189,8 +192,9 @@ badTokenWidget :: forall t m env.
                   -> m ()
 badTokenWidget failure = do
   basePath <- view getApiPath
+  F.h1 [RM.mdcCardTitleLarge_, S.mdcThemePrimary, S.clzSpookMessage] $
+    R.text $ badTokenText failure
   F.img (F.srcAttr, basePath <> "static/dootdoot.gif" :: Text) $ return ()
-  R.text $ badTokenText failure
 
 noTokenWidget :: forall t m. R.DomBuilder t m => m ()
 noTokenWidget = R.text "Welcome! You'll need to receive a unique spook from someone else."
@@ -252,46 +256,48 @@ spookWidget :: forall t m env.
 spookWidget spookData = do
   newSpookRpc' :: NewSpookRpc t m <- view newSpookRpc
 
-  F.div [RM.mdcCard_, S.clzSpookCard] $ do
-    rec
-      newSpooksResultE <- newSpookRpc' (R.constDyn $ Right $ token spookData) getNewSpooksE
+  rec
+    newSpooksResultE <- newSpookRpc' (R.constDyn $ Right $ token spookData) getNewSpooksE
 
-      let widgetStateE = R.ffor newSpooksResultE $ \case
-            (R.ResponseSuccess _ (Right newSpookTokens) _) -> SpookWidgetNewTokens newSpookTokens
-            (R.ResponseSuccess _ (Left spookFailure) _) -> SpookWidgetFailure spookFailure
-            (R.ResponseFailure _ _ _) -> SpookWidgetFailure SpookTemporaryFailure
-            (R.RequestFailure _ _) -> SpookWidgetInitial
+    let widgetStateE = R.ffor newSpooksResultE $ \case
+          (R.ResponseSuccess _ (Right newSpookTokens) _) -> SpookWidgetNewTokens newSpookTokens
+          (R.ResponseSuccess _ (Left spookFailure) _) -> SpookWidgetFailure spookFailure
+          (R.ResponseFailure _ _ _) -> SpookWidgetFailure SpookTemporaryFailure
+          (R.RequestFailure _ _) -> SpookWidgetInitial
 
-      widgetStateDyn <- R.holdDyn SpookWidgetInitial widgetStateE
+    widgetStateDyn <- R.holdDyn SpookWidgetInitial widgetStateE
 
-      F.section RM.mdcCardPrimary_ $ do
-        F.h1 RM.mdcCardTitleLarge_ $
-          R.text "You've Been Spooked!"
-        embedYoutube $ spookData ^. the @"videoUrl"
-      getNewSpooksE <- F.section [RM.mdcCardActions_, S.clzNewSpookList] $ do
-        es <- R.dyn $ R.ffor widgetStateDyn $ \case
-          SpookWidgetInitial -> RM.mdButton def $ R.text "Spook Others"
-          SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
-          SpookWidgetNewTokens tokens -> do
-            appPath <- view getAppPath
-            forM_ tokens $ \(Token tok) -> do
-              F.div S.clzTokenWrapper $ do
-                let link = appPath <> "#" <> tok
-                textArea <- R.textArea $ R.TextAreaConfig link R.never $ R.constDyn (Map.fromList [("readonly", ""), ("rows", "1")])
-                (buttonEl, _) <- RT.button' $ R.text "Copy"
-                jsContextRef <- Dom.askJSM
-                copyListener <- Dom.liftJSM $ EventM.newListener $ do
-                  HTMLTextAreaElement.select $ R._textArea_element textArea
-                  window <- Dom.currentWindowUnchecked
-                  document <- Window.getDocument window
-                  Document.execCommand document ("copy" :: Text) False (Nothing @Text)
-                  return ()
-                Just buttonHtmlEl <- Dom.castTo HTMLButtonElement.HTMLButtonElement $ R._el_element buttonEl
-                Dom.liftJSM $ EventM.addListener buttonHtmlEl GlobalEventHandlers.click copyListener True
-                return ()
-            return $ R.never
-        R.switchPromptly R.never es
-    return ()
+    F.h1 [RM.mdcCardTitleLarge_, S.mdcThemePrimary, S.clzSpookTitle] $
+      R.text "You've Been Spooked!"
+    embedYoutube $ spookData ^. the @"videoUrl"
+    es <- R.dyn $ R.ffor widgetStateDyn $ \case
+      SpookWidgetInitial -> do
+        F.div [S.clzSpookButton, S.clzBigButton] $ do
+          (_, e) <- RM.mdButton def $ R.text "Spook Others"
+          return e
+      SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
+      SpookWidgetNewTokens tokens -> do
+        appPath <- view getAppPath
+        forM_ tokens $ \(Token tok) -> do
+          F.div S.clzTokenWrapper $ do
+            let link = appPath <> "#" <> tok
+            textArea <- R.textArea $ R.TextAreaConfig link R.never $ R.constDyn (Map.fromList [("readonly", ""), ("rows", "1"), ("class", F.unCssClass S.mdcThemePrimary <> " " <> F.unCssClass S.mdcThemeBackground)])
+            buttonHtmlEl <- F.div S.clzSpookButton $ do
+              (buttonEl, _) <- RM.mdButton def $ R.text "Copy"
+              Just buttonHtmlEl <- Dom.castTo HTMLButtonElement.HTMLButtonElement $ R._el_element buttonEl
+              return buttonHtmlEl
+            jsContextRef <- Dom.askJSM
+            copyListener <- Dom.liftJSM $ EventM.newListener $ do
+              HTMLTextAreaElement.select $ R._textArea_element textArea
+              window <- Dom.currentWindowUnchecked
+              document <- Window.getDocument window
+              Document.execCommand document ("copy" :: Text) False (Nothing @Text)
+              return ()
+            Dom.liftJSM $ EventM.addListener buttonHtmlEl GlobalEventHandlers.click copyListener True
+            return ()
+        return $ R.never
+    getNewSpooksE <- R.switchPromptly R.never es
+  return ()
 
 
 embedYoutube :: forall t m.
@@ -306,6 +312,7 @@ embedYoutube (LinkUrl url) = do
         , F.toAttrs (F.srcAttr, url)
         , F.toAttrs (F.frameborderAttr, "0" :: Text)
         , F.toAttrs (F.allowAttr, "autoplay;encrypted-media" :: Text)
+        , F.toAttrs (F.classAttr, F.unCssClass S.clzSpookVid)
         ]
   F.iframe attrs (return ())
 
