@@ -81,8 +81,6 @@ data Params = Params
   }
   deriving (Show, Generic)
 
--- TODO: Set secure cookie true in prod, set yt key in nixops configs.
-
 instance OG.ParseRecord Params
 
 dbConnectInfo :: Params -> ConnectionString

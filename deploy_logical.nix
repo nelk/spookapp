@@ -3,6 +3,7 @@ let
   domain = "spook.app";
   webServerPort = "8080";
   dbPort = 5432;
+  youtubeKey = builtins.getEnv "YOUTUBE_KEY";
 in {
   network.description = "Spook App";
 
@@ -82,7 +83,9 @@ in {
           ExecStart = ''${release.backend}/bin/backend-exe \
             --sitePort=${webServerPort} \
             --dbHost=database \
-            --dbPort=${toString dbPort}
+            --dbPort=${toString dbPort} \
+            --secureCookie=true \
+            --youtubeKey=${youtubeKey}
           '';
         };
       };
