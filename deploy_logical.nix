@@ -46,32 +46,40 @@ in {
 
       # environment.systemPackages = [ pkgs.postgresql ];
 
-      services.nginx = {
-        enable = true;
-        recommendedGzipSettings = true;
-        recommendedOptimisation = true;
-        recommendedProxySettings = true;
-        recommendedTlsSettings = true;
+      services = {
+        nginx = {
+          enable = true;
+          recommendedGzipSettings = true;
+          recommendedOptimisation = true;
+          recommendedProxySettings = true;
+          recommendedTlsSettings = true;
 
-        virtualHosts = {
-          # TODO Set up test/dev vs production version
-          "localhost" = {
-            locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
-            locations."/app".proxyPass = "http://localhost:${webServerPort}";
-          };
-          "${domain}" = {
-            forceSSL = enableSsl;
-            enableACME = enableSsl;
-            locations."/app/".proxyPass = "http://localhost:${webServerPort}";
-            locations."/static/".root = "${release.frontend-static-files}";
-            locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
-          };
-          "www.${domain}" = {
-            forceSSL = enableSsl;
-            enableACME = enableSsl;
-            locations."/".extraConfig = "return 301 $scheme://spook.app$request_uri;";
+          virtualHosts = {
+            # TODO Set up test/dev vs production version
+            "localhost" = {
+              locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
+              locations."/app".proxyPass = "http://localhost:${webServerPort}";
+            };
+            "${domain}" = {
+              forceSSL = enableSsl;
+              enableACME = enableSsl;
+              locations."/app/".proxyPass = "http://localhost:${webServerPort}";
+              locations."/static/".root = "${release.frontend-static-files}";
+              locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
+            };
+            "www.${domain}" = {
+              forceSSL = enableSsl;
+              enableACME = enableSsl;
+              locations."/".extraConfig = "return 301 $scheme://spook.app$request_uri;";
+            };
           };
         };
+
+        # Enables journald export for stackdriver on gce.
+        # TODO - enable after upgrading nix channel by updating reflex-platform.
+        # journaldriver = {
+        #   enable = true;
+        # };
       };
 
       systemd.services.spook = {
@@ -84,7 +92,7 @@ in {
             --sitePort=${webServerPort} \
             --dbHost=database \
             --dbPort=${toString dbPort} \
-            --secureCookie=true \
+            --secureCookie \
             --youtubeKey=${youtubeKey}
           '';
         };
