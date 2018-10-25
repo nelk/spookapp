@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecursiveDo #-}
 
 module Spook.App.Main
@@ -34,7 +35,13 @@ import qualified Data.Map as Map
 import Language.Javascript.JSaddle.Monad (runJSaddle)
 import qualified Language.Javascript.JSaddle   as Js
 import qualified JSDOM as Dom (currentWindow, currentWindowUnchecked)
-import qualified JSDOM.Types as Dom
+import qualified JSDOM.Types as Dom (Element(..), MonadJSM, JSM, askJSM, liftJSM, runJSM, unsafeCastTo)
+
+-- Horrible hack - figure out why it's needed.
+#if defined(ghcjs_HOST_OS)
+import GHCJS.DOM.Types (Element(..), HTMLTextAreaElement(..))
+#endif
+
 import qualified JSDOM.Document as Document
 import qualified JSDOM.Window as Window
 import qualified JSDOM.Location as Location
@@ -284,11 +291,12 @@ spookWidget spookData = do
             textArea <- R.textArea $ R.TextAreaConfig link R.never $ R.constDyn (Map.fromList [("readonly", ""), ("rows", "1"), ("class", F.unCssClass S.mdcThemePrimary <> " " <> F.unCssClass S.mdcThemeBackground)])
             buttonHtmlEl <- F.div S.clzSpookButton $ do
               (buttonEl, _) <- RM.mdButton def $ R.text "Copy"
-              Just buttonHtmlEl <- Dom.castTo HTMLButtonElement.HTMLButtonElement $ R._el_element buttonEl
+              buttonHtmlEl <- Dom.unsafeCastTo HTMLButtonElement.HTMLButtonElement $ R._el_element buttonEl
               return buttonHtmlEl
             jsContextRef <- Dom.askJSM
             copyListener <- Dom.liftJSM $ EventM.newListener $ do
-              HTMLTextAreaElement.select $ R._textArea_element textArea
+              textAreaHtmlEl <- Dom.unsafeCastTo HTMLTextAreaElement.HTMLTextAreaElement $ R._textArea_element textArea
+              HTMLTextAreaElement.select textAreaHtmlEl
               window <- Dom.currentWindowUnchecked
               document <- Window.getDocument window
               Document.execCommand document ("copy" :: Text) False (Nothing @Text)
