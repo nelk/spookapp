@@ -60,12 +60,12 @@ in {
             # TODO Set up test/dev vs production version
             "localhost" = {
               locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
-              locations."/app".proxyPass = "http://localhost:${toString webServerPort}";
+              locations."/api".proxyPass = "http://localhost:${toString webServerPort}";
             };
             "${domain}" = {
               forceSSL = enableSsl;
               enableACME = enableSsl;
-              locations."/app/".proxyPass = "http://localhost:${toString webServerPort}";
+              locations."/api/".proxyPass = "http://localhost:${toString webServerPort}";
               locations."/static/".root = "${release.frontend-static-files}";
               locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
             };
