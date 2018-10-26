@@ -34,6 +34,8 @@ library
                      , wai-app-static
                      , wai-extra
                      , wai-cors
+                     , wai-middleware-prometheus
+                     , prometheus-client
                      , warp
                      , http-types
                      , text

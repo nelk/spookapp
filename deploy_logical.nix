@@ -72,6 +72,11 @@ in {
               enableACME = enableSsl;
               locations."/".extraConfig = "return 301 $scheme://spook.app$request_uri;";
             };
+            "grafana.${domain}" = {
+              forceSSL = enableSsl;
+              enableACME = enableSsl;
+              locations."/".proxyPass = "http://localhost:${toString grafanaPort}";
+            };
           };
         };
 
@@ -80,6 +85,34 @@ in {
         # journaldriver = {
         #   enable = true;
         # };
+
+        prometheus = {
+          enable = true;
+          scrapeConfigs = [
+            {
+              job_name = "spook";
+              scrape_interval = "10s";
+              static_configs = [
+                {
+                  targets = [
+                    "localhost:${toString webServerPort}"
+                  ];
+                  labels = {
+                    alias = "prometheus.spook.app";
+                  };
+                }
+              ];
+            }
+          ];
+        };
+
+        grafana = {
+          enable = true;
+          addr = "0.0.0.0";
+          port = grafanaPort;
+          domain = "grafana.spook.app";
+          rootUrl = "https://grafana.spook.app/";
+        };
       };
 
       systemd.services.spook = {
@@ -89,11 +122,12 @@ in {
           User = "spookapp";
           Restart = "always";
           ExecStart = ''${release.backend}/bin/backend-exe \
-            --sitePort=${webServerPort} \
+            --sitePort=${toString webServerPort} \
             --dbHost=database \
             --dbPort=${toString dbPort} \
             --secureCookie \
-            --youtubeKey=${youtubeKey}
+            --youtubeKey=${youtubeKey} \
+            --enablePrometheus
           '';
         };
       };

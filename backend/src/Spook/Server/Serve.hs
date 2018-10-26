@@ -31,6 +31,7 @@ import qualified Data.ByteString.Base64.URL as Bs64Url
 import Servant
 import Network.Wai.Middleware.Cors (cors, CorsResourcePolicy(..), simpleCorsResourcePolicy)
 import Network.Wai.Middleware.Servant.Options (provideOptions)
+import Network.Wai.Middleware.Prometheus (prometheus)
 import Data.Monoid ((<>))
 import Control.Monad (replicateM, forM_, void, when)
 import Control.Monad.Base (MonadBase)
@@ -78,6 +79,7 @@ data Params = Params
   , secureCookie :: Bool
   , youtubeKey :: Text
   , youtubeSearchDelay :: Maybe Double
+  , enablePrometheus :: Bool
   }
   deriving (Show, Generic)
 
@@ -103,6 +105,7 @@ data SiteContext = SiteContext
   , siteHttpManager :: Manager
   , siteYoutubeKey :: Text
   , siteYoutubeSearchDelay :: NominalDiffTime
+  , sitePrometheus :: Bool
   } deriving Generic
 
 -- TODO: Lookup servant threading model - how do threads interact with StateT? Make random part of that.
@@ -141,6 +144,7 @@ startApp = do
         , siteSecureCookie = secureCookie params
         , siteYoutubeKey = youtubeKey params
         , siteYoutubeSearchDelay = realToFrac $ fromMaybe 2.0 $ youtubeSearchDelay params
+        , sitePrometheus = enablePrometheus params
         }
 
   _ <- forkIO $ spookFetcherWorker context
@@ -182,7 +186,11 @@ app context =
        | siteAllowCrossOrigin context =
            cors (const $ Just policy) . provideOptions (Proxy :: Proxy ServerApi)
        | otherwise = id
+     prometheusMiddleware
+       | sitePrometheus context = prometheus def
+       | otherwise = id
  in logStdoutDev
+    $ prometheusMiddleware
     $ corsMiddleware
     $ serve (Proxy :: Proxy FullApi)
     $ server context

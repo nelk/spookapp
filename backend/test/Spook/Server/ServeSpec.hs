@@ -58,6 +58,7 @@ mkApplication dbPool = do
     , siteHttpManager = manager
     , siteYoutubeKey = "ytkey"
     , siteYoutubeSearchDelay = realToFrac 2.0
+    , sitePrometheus = False
     }
 
 setupDb :: Es.ConnectionPool -> IO ()
