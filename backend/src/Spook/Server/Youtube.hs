@@ -65,14 +65,20 @@ instance FromJSON YoutubeSearchResponse where
   }
 }
 -}
-data YoutubeResource = YoutubeResource
-  { videoId :: Text
-  }
+data YoutubeResource = YoutubeVideoId Text
+                     | YoutubeChannelId Text
+                     | YoutubePlaylistId Text
   deriving (Generic, Show)
 
 instance FromJSON YoutubeResource where
-  parseJSON (Object o) =
-    YoutubeResource <$> ((o .: "id") >>= (.: "videoId"))
+  parseJSON (Object o) = do
+    id' <- o .: "id"
+    kind :: Text <- id' .: "kind"
+    case kind of
+      "youtube#video" -> YoutubeVideoId <$> id' .: "videoId"
+      "youtube#playlist" -> YoutubePlaylistId <$> id' .: "playlistId"
+      "youtube#channel" -> YoutubeChannelId <$> id' .: "channelId"
+      _ -> mzero
   parseJSON _ = mzero
 
 data YoutubeRequest = YoutubeRequest
@@ -81,6 +87,7 @@ data YoutubeRequest = YoutubeRequest
   , maxResults :: Int
   , part :: Text
   , pageToken :: Maybe Text
+  , resourceType :: Maybe Text
   }
   deriving (Generic, Show)
 
@@ -90,14 +97,15 @@ type YoutubeApi = "youtube" :> "v3" :> "search"
                :> QueryParam "maxResults" Int
                :> QueryParam "part" Text
                :> QueryParam "pageToken" Text
+               :> QueryParam "type" Text
                :> Get '[JSON] YoutubeSearchResponse
 
-youtubeClient :: Maybe Text -> Maybe Text -> Maybe Int -> Maybe Text -> Maybe Text -> ClientM YoutubeSearchResponse
+youtubeClient :: Maybe Text -> Maybe Text -> Maybe Int -> Maybe Text -> Maybe Text -> Maybe Text -> ClientM YoutubeSearchResponse
 youtubeClient = client (Proxy :: Proxy YoutubeApi)
 
 baseUrl :: BaseUrl
 baseUrl = BaseUrl Https "www.googleapis.com" 443 ""
 
 searchYoutube :: Manager -> YoutubeRequest -> IO (Either ServantError YoutubeSearchResponse)
-searchYoutube m r = runClientM (youtubeClient (Just $ key r) (Just $ q r) (Just $ maxResults r) (Just $ part r) (pageToken r)) (ClientEnv m baseUrl)
+searchYoutube m r = runClientM (youtubeClient (Just $ key r) (Just $ q r) (Just $ maxResults r) (Just $ part r) (pageToken r) (resourceType r)) (ClientEnv m baseUrl)
 

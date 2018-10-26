@@ -19,7 +19,7 @@ import Network.Socket
 import Data.Default (def)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text (decodeUtf8, encodeUtf8)
-import Data.Maybe (isNothing, fromMaybe, fromJust, isJust, isNothing)
+import Data.Maybe (isNothing, fromMaybe, fromJust, isJust, isNothing, mapMaybe)
 import Numeric (showHex)
 import Data.Word (Word8, Word16)
 import Data.Time (UTCTime, NominalDiffTime, getCurrentTime, addUTCTime)
@@ -419,15 +419,18 @@ spookFetcherWorker context = do
                 { YT.key = siteYoutubeKey context
                 , YT.q = "spooky meme"
                 , YT.maxResults = ytPageSize
-                , YT.part = "snippet"
+                , YT.part = "id" -- "snippet"
                 , YT.pageToken = pageToken
+                , YT.resourceType = Just "video"
                 }
               putStrLn $ "Response from YT search: " <> show response
               case response of
                 Left servantError -> loop spookVids spookVidPage (Just time) (Just SpookTemporaryFailure)
                 Right searchResult -> do
                   -- TODO: Fill requests when possible, handle failures from YT.
-                  let newSpookVids = (SpookVid . YT.videoId) <$> YT.resources searchResult
+                  let newSpookVids = mapMaybe (\r -> case r of
+                                                  YT.YoutubeVideoId videoId -> Just $ SpookVid videoId
+                                                  _ -> Nothing) $ YT.resources searchResult
                       spookVidPage' = (SpookVidPage $ YT.nextPageToken searchResult)
                   spookVidPageId <- runSql' $ do
                     -- TODO: Upsert to allow ignoring duplicates.
