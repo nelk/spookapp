@@ -1,12 +1,16 @@
 # TODO: Do prod and sandbox versions.
-# TODO: Set machine names.
 let
+  # TODO: Had trouble accessing database from webserver when one was on 192.168.4.0/24 and other ended up on 10.0.0.0/8.
+  addressRange = "192.168.4.0/24";
+  # addressRange = "10.0.0.0/8";
+  # addressRange = "10.138.0.0/20";
+
   defaultDeployment = { machineName, diskSize, ipAddress ? null, tags ? [], network ? null }: {
     deployment.targetEnv = "gce";
     deployment.gce = {
       # instance properties
       region = "us-west1-b";
-      instanceType = "f1-micro";
+      instanceType = "f1-micro"; # "g1-small"
 
       inherit machineName;
       inherit ipAddress;
@@ -42,8 +46,9 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
   #   publicIPv4 = "35.197.4.149";
   # };
 
-  resources.gceNetworks.webnet = {
-    addressRange = "192.168.4.0/24";
+  resources.gceNetworks.spooknet = {
+    name = "spooknet";
+    inherit addressRange;
     firewall = {
       allow-http = {
         targetTags = ["public-http"];
@@ -53,14 +58,20 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
         targetTags = ["public-https"];
         allowed.tcp = [443];
       };
+      allow-internal = {
+# TODO - bad - won't allow tcp through.
+        allowed.tcp = null;
+        sourceRanges = [addressRange];
+      };
     };
   };
 
   # TODO: Health checks.
 
-  database = defaultDeployment {
+  database = {resources, ...}: defaultDeployment {
     machineName = "spook-database-prod";
     diskSize = 20;
+    network = resources.gceNetworks.spooknet;
   };
 
   webserver = {resources, ...}: defaultDeployment {
@@ -69,6 +80,6 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
     # ipAddress = resources.gceStaticIPs.spookIp;
     ipAddress = "spook-ip";
     tags = ["public-http" "public-https"];
-    network = resources.gceNetworks.webnet;
+    network = resources.gceNetworks.spooknet;
   };
 }

@@ -1,7 +1,8 @@
 { enableSsl ? true }: # Make deploy_prod.nix that sets enableSsl to true.
 let
   domain = "spook.app";
-  webServerPort = "8080";
+  webServerPort = 8080;
+  grafanaPort = 3000;
   dbPort = 5432;
   youtubeKey = builtins.getEnv "YOUTUBE_KEY";
 in {
@@ -12,6 +13,7 @@ in {
     services = {
       oidentd.enable = true;
 
+      # TODO: Set up db password.
       postgresql = {
         enable = true;
         package = pkgs.postgresql;
@@ -58,12 +60,12 @@ in {
             # TODO Set up test/dev vs production version
             "localhost" = {
               locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
-              locations."/app".proxyPass = "http://localhost:${webServerPort}";
+              locations."/app".proxyPass = "http://localhost:${toString webServerPort}";
             };
             "${domain}" = {
               forceSSL = enableSsl;
               enableACME = enableSsl;
-              locations."/app/".proxyPass = "http://localhost:${webServerPort}";
+              locations."/app/".proxyPass = "http://localhost:${toString webServerPort}";
               locations."/static/".root = "${release.frontend-static-files}";
               locations."/".root = "${release.frontend}/bin/frontend-exe.jsexe";
             };
