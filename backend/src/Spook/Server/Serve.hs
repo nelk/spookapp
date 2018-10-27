@@ -152,6 +152,9 @@ startApp = do
   putStrLn $ "Running on port " ++ show port
   run port $ app context
 
+magicToken :: Token
+magicToken = Token "magictoken23740923"
+
 insertTestData :: MonadIO m => Es.SqlPersistT m ()
 insertTestData = do {- forM_ testData $ \savedSpook -> do
   maybeDbSpook :: Maybe (Es.Entity SavedSpook) <- Es.getBy $ UniqueToken $ savedSpookToken savedSpook
@@ -162,7 +165,7 @@ insertTestData = do {- forM_ testData $ \savedSpook -> do
   _ <- Es.upsert (Visitor {visitorVisitorId = visitorId}) []
   _ <- Es.upsert (SpookVid {spookVidVidId = vidId }) []
   _ <- Es.upsert (SavedSpook
-      { savedSpookToken = "abc12401"
+      { savedSpookToken = unToken magicToken
       , savedSpookParentSpook = Nothing
       , savedSpookVisits = 0
       , savedSpookIp = Nothing
@@ -322,7 +325,7 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
   let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Either SpookFailure [Token])
       handle (Just spook) (Just visitor)
         | savedSpookClaimer spook == Just (visitorVisitorId visitor)
-        && savedSpookChildSpookCount spook == 0 = do
+        && (savedSpookChildSpookCount spook == 0 || savedSpookToken spook == unToken magicToken) = do
           newVidsEither :: Either SpookFailure [SpookVid] <- liftA pure <$> requestNewVid -- TODO: Multiple?
           case newVidsEither of
             Left e -> return $ Left e
