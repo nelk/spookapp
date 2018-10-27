@@ -22,7 +22,7 @@ import qualified Data.Text.Encoding as Text (decodeUtf8, encodeUtf8)
 import Data.Maybe (isNothing, fromMaybe, fromJust, isJust, isNothing, mapMaybe)
 import Numeric (showHex)
 import Data.Word (Word8, Word16)
-import Data.Time (UTCTime, NominalDiffTime, getCurrentTime, addUTCTime)
+import Data.Time (UTCTime, NominalDiffTime, getCurrentTime, addUTCTime, diffUTCTime)
 import System.Random (randomIO, randomRIO)
 import qualified Data.ByteString.Lazy as BsL
 import qualified Data.ByteString.Builder as BsL
@@ -95,6 +95,12 @@ dbConnectInfo Params{..} = Text.encodeUtf8 $ Text.unwords $
   , "dbname=" <> fromMaybe "spook" dbDatabase
   ] ++ ["sslmode=require" | dbSsl]
 
+data Stats m = Stats
+  { incClaimToken :: m ()
+  , incCreateToken :: Int -> m ()
+  , recDbLatency :: Text -> Double -> m ()
+  } deriving Generic
+
 data SiteContext = SiteContext
   { siteDbPool :: Pool SqlBackend
   , siteServeIndexDirectory :: Maybe FilePath
@@ -107,6 +113,7 @@ data SiteContext = SiteContext
   , siteYoutubeKey :: Text
   , siteYoutubeSearchDelay :: NominalDiffTime
   , sitePrometheus :: Bool
+  , siteStats :: Stats IO
   } deriving Generic
 
 -- TODO: Lookup servant threading model - how do threads interact with StateT? Make random part of that.
@@ -119,10 +126,19 @@ instance MonadBaseControl IO App where
   liftBaseWith f = App $ liftBaseWith $ \q -> f (q . runApp)
   restoreM = App . restoreM
 
-runSql :: Es.SqlPersistT App a -> App a
-runSql sql = do
-  pool <- view (the @"siteDbPool")
-  Es.runSqlPool sql pool
+runSql :: Text -> Es.SqlPersistT App a -> App a
+runSql queryName sql = do
+  context <- ask
+  runSql' context queryName sql
+
+runSql' :: forall m a. (MonadIO m, MonadBaseControl IO m) => SiteContext -> Text -> Es.SqlPersistT m a -> m a
+runSql' context queryName sql = do
+  beforeTime <- liftIO getCurrentTime
+  result <- Es.runSqlPool sql (siteDbPool context)
+  afterTime <- liftIO getCurrentTime
+  let latency :: Double = realToFrac $ beforeTime `diffUTCTime` afterTime
+  liftIO $ recDbLatency (siteStats context) queryName latency
+  return result
 
 startApp :: IO ()
 startApp = do
@@ -133,6 +149,25 @@ startApp = do
     insertTestData
   httpManager <- newManager tlsManagerSettings
   requestVidMVar <- MVar.newEmptyMVar
+  let prometheusOn = enablePrometheus params
+
+  stats <- if prometheusOn
+    then do
+      claimTokenCounter <- Prom.registerIO $ Prom.counter (Prom.Info "claim_token" "Number of tokens claimed")
+      createTokenCounter <- Prom.registerIO $ Prom.counter (Prom.Info "create_token" "Number of tokens created")
+      dbLatencyHistogram <- Prom.registerIO
+        $ Prom.vector ("query_name" :: String)
+        $ Prom.histogram (Prom.Info "db_latency" "Latency of db queries") Prom.defaultBuckets
+      return Stats
+        { incClaimToken = liftIO $ Prom.incCounter claimTokenCounter
+        , incCreateToken = \i -> void $ liftIO $ Prom.addCounter (fromIntegral i) createTokenCounter
+        , recDbLatency = \query_name latency -> liftIO $ Prom.withLabel (Text.unpack query_name) (Prom.observe latency) dbLatencyHistogram 
+        }
+    else return Stats
+          { incClaimToken = return ()
+          , incCreateToken = const $ return ()
+          , recDbLatency = const $ const $ return ()
+          }
 
   let port = fromMaybe 8080 $ sitePort params
       context = SiteContext
@@ -145,7 +180,8 @@ startApp = do
         , siteSecureCookie = secureCookie params
         , siteYoutubeKey = youtubeKey params
         , siteYoutubeSearchDelay = realToFrac $ fromMaybe 2.0 $ youtubeSearchDelay params
-        , sitePrometheus = enablePrometheus params
+        , sitePrometheus = prometheusOn
+        , siteStats = stats
         }
 
   _ <- forkIO $ spookFetcherWorker context
@@ -228,11 +264,11 @@ headMay (a:_) = Just a
 headMay _ = Nothing
 
 getVisitor :: VisitorId -> App (Maybe Visitor)
-getVisitor visitorId = runSql $ Es.get visitorId
+getVisitor visitorId = runSql "get_visitor" $ Es.get visitorId
 
 getSpookByToken :: Token -> App (Maybe SavedSpook)
 getSpookByToken (Token token) =
-  runSql $ Es.get $ SavedSpookKey token
+  runSql "get_spook" $ Es.get $ SavedSpookKey token
 {-
   spookEnts <- runSql $ Es.select $ Es.from $ \savedSpook -> do
     Es.where_ $ savedSpook Es.^. SavedSpookToken Es.==. Es.val token
@@ -259,7 +295,7 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
   maybeSpook <- getSpookByToken token
   setSecureCookie <- view (the @"siteSecureCookie")
 
-  _ <- runSql $ Es.insert $ Visit
+  _ <- runSql "insert_visit" $ Es.insert $ Visit
     { visitIp = getAddrIpAsText realIpHeader sockAddr
     , visitReferrer = referrerHeader
     , visitVisitorId = visitorVisitorId <$> maybeVisitor
@@ -272,7 +308,7 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
       handle (Just spook) Nothing | isNothing (savedSpookClaimer spook) = do
         -- TODO: Increment IP.
         visitorId <- generateToken
-        runSql $ do
+        runSql "insert_visitor_claim_saved_spook" $ do
           _ <- Es.insert $ Visitor { visitorVisitorId = unToken visitorId }
           Es.update $ \s -> do
             Es.set s [ SavedSpookClaimer Es.=. Es.val (Just $ unToken visitorId), SavedSpookVisits Es.=. Es.val 1 ]
@@ -283,6 +319,8 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
                          , Cookie.setCookieHttpOnly = True
                          , Cookie.setCookieSecure = setSecureCookie
                          }
+        stats <- view (the @"siteStats")
+        liftIO $ incClaimToken stats
         return $ addCookie cookie $ Right $ SpookData
           { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
           , token = token
@@ -317,7 +355,7 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
   maybeSpook <- getSpookByToken token
   maybeVisitor <- cookieToVisitor maybeCookie
 
-  _ <- runSql $ Es.insert $ Visit
+  _ <- runSql "insert_visit" $ Es.insert $ Visit
     { visitIp = getAddrIpAsText realIpHeader sockAddr
     , visitReferrer = referrerHeader
     , visitVisitorId = visitorVisitorId <$> maybeVisitor
@@ -332,7 +370,7 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
             Left e -> return $ Left e
             Right newVids -> do
               newTokens <- replicateM (length newVids) generateToken
-              runSql $ do
+              result <- runSql "insert_saved_spooks" $ do
                 forM_ (zip newVids newTokens) $ \(spookVid, token') -> Es.insert $ SavedSpook
                   { savedSpookToken = unToken token'
                   , savedSpookParentSpook = Just $ savedSpookToken spook
@@ -348,11 +386,14 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
                   Es.set s [ SavedSpookChildSpookCount Es.+=. Es.val (length newVids) ]
                   Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
                 return $ Right newTokens
+              stats <- view (the @"siteStats")
+              liftIO $ incCreateToken stats $ length newVids
+              return result
 
       handle (Just spook) (Just visitor)
         | savedSpookClaimer spook == Just (visitorVisitorId visitor)
         && savedSpookChildSpookCount spook > 0 = do
-          alreadyCreatedChildSpooks :: [Es.Entity SavedSpook] <- runSql $ Es.select $ Es.from $ \savedSpook -> do
+          alreadyCreatedChildSpooks :: [Es.Entity SavedSpook] <- runSql "select_already_created_saved_spooks" $ Es.select $ Es.from $ \savedSpook -> do
             Es.where_ $ savedSpook Es.^. SavedSpookParentSpook Es.==. Es.just (Es.val $ savedSpookToken spook)
             return savedSpook
           return $ Right $ (Token . savedSpookToken . Es.entityVal) <$> alreadyCreatedChildSpooks
@@ -410,16 +451,14 @@ spookFetcherWorker :: SiteContext -> IO ()
 spookFetcherWorker context = do
   let requestVidMVar = siteRequestVidMVar context
       searchDelay = siteYoutubeSearchDelay context
-      runSql' :: Es.SqlPersistT IO a -> IO a
-      runSql' = flip Es.runSqlPool $ siteDbPool context
 
-  unusedSpookVids :: [Es.Entity SpookVid] <- runSql' $ Es.select $ Es.from $ \(spookVid `Es.LeftOuterJoin` savedSpook) -> do
+  unusedSpookVids :: [Es.Entity SpookVid] <- runSql' context "get_unused_spook_vids" $ Es.select $ Es.from $ \(spookVid `Es.LeftOuterJoin` savedSpook) -> do
     Es.on $ Es.just (spookVid Es.^. SpookVidVidId) Es.==. savedSpook Es.?. SavedSpookVidId
     Es.where_ $ Es.isNothing (savedSpook Es.?. SavedSpookId) -- Note: Note the same as Es.==. Es.nothing
     return spookVid
 
   (headMay -> firstSpookVidPage :: Maybe (Es.Entity SpookVidPage)) <-
-    runSql' $ Es.select $ Es.from $ \spookVidPage -> do
+    runSql' context "get_spook_vid_page" $ Es.select $ Es.from $ \spookVidPage -> do
       Es.limit 1
       return spookVidPage
 
@@ -447,7 +486,7 @@ spookFetcherWorker context = do
                                                   YT.YoutubeVideoId videoId -> Just $ SpookVid videoId
                                                   _ -> Nothing) $ YT.resources searchResult
                       spookVidPage' = (SpookVidPage $ YT.nextPageToken searchResult)
-                  spookVidPageId <- runSql' $ do
+                  spookVidPageId <- runSql' context "insert_spook_vids" $ do
                     -- TODO: Upsert to allow ignoring duplicates.
                     forM_ newSpookVids $ Es.insert
                     case spookVidPage of
