@@ -23,7 +23,7 @@ import Data.Maybe (isNothing, fromMaybe, fromJust, isJust, isNothing, mapMaybe)
 import Numeric (showHex)
 import Data.Word (Word8, Word16)
 import Data.Time (UTCTime, NominalDiffTime, getCurrentTime, addUTCTime)
-import System.Random (randomIO)
+import System.Random (randomIO, randomRIO)
 import qualified Data.ByteString.Lazy as BsL
 import qualified Data.ByteString.Builder as BsL
 import qualified Data.ByteString as Bs
@@ -326,7 +326,7 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
       handle (Just spook) (Just visitor)
         | savedSpookClaimer spook == Just (visitorVisitorId visitor)
         && (savedSpookChildSpookCount spook == 0 || savedSpookToken spook == unToken magicToken) = do
-          newVidsEither :: Either SpookFailure [SpookVid] <- liftA pure <$> requestNewVid -- TODO: Multiple?
+          newVidsEither :: Either SpookFailure [SpookVid] <- requestNewVids
           case newVidsEither of
             Left e -> return $ Left e
             Right newVids -> do
@@ -392,14 +392,16 @@ ytPageSize = 30
 ytBufferThreshold :: Int
 ytBufferThreshold = 10
 
-
-requestNewVid :: App (Either SpookFailure SpookVid)
-requestNewVid = do
+requestNewVids :: App (Either SpookFailure [SpookVid])
+requestNewVids = do
   requestVidMVar <- view $ the @"siteRequestVidMVar"
-  liftIO $ do
-    responseMVar <- MVar.newEmptyMVar
-    MVar.putMVar requestVidMVar responseMVar
-    MVar.takeMVar responseMVar
+  eitherResults <- liftIO $ do
+    numTokens <- randomRIO (1, 2)
+    replicateM numTokens $ do
+      responseMVar <- MVar.newEmptyMVar
+      MVar.putMVar requestVidMVar responseMVar
+      MVar.takeMVar responseMVar
+  return $ sequence eitherResults
 
 spookFetcherWorker :: SiteContext -> IO ()
 spookFetcherWorker context = do
