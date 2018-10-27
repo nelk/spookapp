@@ -138,6 +138,4 @@ in {
         spookapp = {};
       };
     };
-
-  # TODO: Monitoring instance with prometheus, grafana.
 }

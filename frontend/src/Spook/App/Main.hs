@@ -201,7 +201,11 @@ badTokenWidget failure = do
   basePath <- view getApiPath
   F.h1 [RM.mdcCardTitleLarge_, S.mdcThemePrimary, S.clzSpookMessage] $
     R.text $ badTokenText failure
-  F.img (F.srcAttr, basePath <> "static/dootdoot.gif" :: Text) $ return ()
+  let attrs :: F.Attrs t = mconcat
+        [ F.toAttrs (F.srcAttr, basePath <> "static/dootdoot.gif" :: Text)
+        , F.toAttrs S.clzSpookImage
+        ]
+  F.img attrs $ return ()
 
 noTokenWidget :: forall t m. R.DomBuilder t m => m ()
 noTokenWidget = R.text "Welcome! You'll need to receive a unique spook from someone else."

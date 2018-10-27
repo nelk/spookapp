@@ -46,6 +46,9 @@ clzSpookVid = "spook-vid"
 clzSpookButton :: F.CssClass
 clzSpookButton = "spook-button"
 
+clzSpookImage :: F.CssClass
+clzSpookImage = "spook-image"
+
 clzBigButton :: F.CssClass
 clzBigButton = "big-button"
 
@@ -439,6 +442,9 @@ css serverPath = do
       Clay.button Clay.? do
         Clay.fontSize $ Clay.em 1.8
         Clay.height $ Clay.px 55
+
+    clz clzSpookImage Clay.? do
+      fullWidth
 
   clz clzRoot Clay.? do
     fullWidth

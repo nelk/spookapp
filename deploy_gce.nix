@@ -5,13 +5,13 @@ let
   # addressRange = "10.0.0.0/8";
   # addressRange = "10.138.0.0/20";
 
-  defaultDeployment = { machineName, diskSize, ipAddress ? null, tags ? [], network ? null }: {
+  defaultDeployment = { machineName, diskSize, instanceType ? "f1-micro", ipAddress ? null, tags ? [], network ? null }: {
     deployment.targetEnv = "gce";
     deployment.gce = {
       # instance properties
       region = "us-west1-b";
-      instanceType = "f1-micro"; # "g1-small"
 
+      inherit instanceType;
       inherit machineName;
       inherit ipAddress;
       inherit tags;
@@ -59,8 +59,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
         allowed.tcp = [443];
       };
       allow-internal = {
-# TODO - bad - won't allow tcp through.
-        allowed.tcp = null;
+        allowed.tcp = "0-65535";
         sourceRanges = [addressRange];
       };
     };
@@ -76,6 +75,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
 
   webserver = {resources, ...}: defaultDeployment {
     machineName = "spook-webserver-prod";
+    instanceType = "g1-small";
     diskSize = 10;
     # ipAddress = resources.gceStaticIPs.spookIp;
     ipAddress = "spook-ip";

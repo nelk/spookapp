@@ -174,17 +174,16 @@ insertTestData = do {- forM_ testData $ \savedSpook -> do
       , savedSpookCreator = visitorId
       , savedSpookClaimer = Nothing
       , savedSpookVidId = vidId
-      }) [ SavedSpookClaimer Persist.=. Nothing, SavedSpookVisits Persist.=. 0, SavedSpookChildSpookCount Persist.=. 0 ]
+      }) [] -- [ SavedSpookClaimer Persist.=. Nothing, SavedSpookVisits Persist.=. 0, SavedSpookChildSpookCount Persist.=. 0 ]
   return ()
 
 createVideoUrl :: Text -> Text
-createVideoUrl id' = "https://www.youtube.com/embed/" <> id' <> "?autoplay=1&rel=0&amp;controls=0&amp;showinfo=0"
+createVideoUrl id' = "https://www.youtube.com/embed/" <> id' <> "?autoplay=1&rel=0&controls=0&showinfo=0&ecver=2"
 
 
 app :: SiteContext -> Application
 app context =
- -- TODO: Set-Cookie still not working (at least on localhost)
- let policy = simpleCorsResourcePolicy { corsOrigins = Just (["http://localhost:8080", "http://localhost:3003"], True), corsRequestHeaders = ["Content-Type"] } -- TODO: Set allowed origins from flag.
+ let policy = simpleCorsResourcePolicy { corsOrigins = Just (["http://localhost:8080", "http://localhost:3003"], True), corsRequestHeaders = ["Content-Type"] }
      corsMiddleware
        | siteAllowCrossOrigin context =
            cors (const $ Just policy) . provideOptions (Proxy :: Proxy ServerApi)
@@ -201,7 +200,7 @@ app context =
 convertApp :: SiteContext -> App :~> Handler
 convertApp cfg = NT (flip runReaderT cfg . runApp)
 
--- TODO - compilation hangs. Probably can't put headers ahead of api stuff...
+-- Note: Can't put headers ahead of path or compiler hangs.
 server :: SiteContext -> Server FullApi
 server context = enter (convertApp context) ((getSpookHandler :<|> newSpookHandler ) {- :<|> indexHandler -} ) :<|> rawHandler context
 
@@ -226,9 +225,6 @@ generateToken = do
 headMay :: [a] -> Maybe a
 headMay (a:_) = Just a
 headMay _ = Nothing
-
--- TODO: Store cookie. Can rewatch with it only.
--- TODO: Can only generate new ones once, store if done, return stored ones if same ip, cookie.
 
 getSpookByTokenOrErr :: ServantErr -> Token -> App SavedSpook
 getSpookByTokenOrErr err token = do
@@ -344,7 +340,7 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
                   , savedSpookVidId = spookVidVidId spookVid
                   }
                 Es.update $ \s -> do
-                  Es.set s [ SavedSpookChildSpookCount Es.=. Es.val (length newVids) ]
+                  Es.set s [ SavedSpookChildSpookCount Es.+=. Es.val (length newVids) ]
                   Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
                 return $ Right newTokens
 
