@@ -31,7 +31,8 @@ import qualified Data.ByteString.Base64.URL as Bs64Url
 import Servant
 import Network.Wai.Middleware.Cors (cors, CorsResourcePolicy(..), simpleCorsResourcePolicy)
 import Network.Wai.Middleware.Servant.Options (provideOptions)
-import Network.Wai.Middleware.Prometheus (prometheus)
+import qualified Network.Wai.Middleware.Prometheus as Prom (prometheus)
+import qualified Prometheus as Prom
 import Data.Monoid ((<>))
 import Control.Monad (replicateM, forM_, void, when)
 import Control.Monad.Base (MonadBase)
@@ -189,7 +190,7 @@ app context =
            cors (const $ Just policy) . provideOptions (Proxy :: Proxy ServerApi)
        | otherwise = id
      prometheusMiddleware
-       | sitePrometheus context = prometheus def
+       | sitePrometheus context = Prom.prometheus def
        | otherwise = id
  in logStdoutDev
     $ prometheusMiddleware
@@ -225,13 +226,6 @@ generateToken = do
 headMay :: [a] -> Maybe a
 headMay (a:_) = Just a
 headMay _ = Nothing
-
-getSpookByTokenOrErr :: ServantErr -> Token -> App SavedSpook
-getSpookByTokenOrErr err token = do
-  visitorMay <- getSpookByToken token
-  case visitorMay of
-    Nothing -> throwError err
-    Just spook -> return spook
 
 getVisitor :: VisitorId -> App (Maybe Visitor)
 getVisitor visitorId = runSql $ Es.get visitorId
@@ -371,12 +365,14 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
       -- return (addHeader "*" result :: Headers '[AccessControlAllowOriginHeader] (Either SpookFailure [Token]))
 
 -- |Landing page for retrieving spook - always serve index.
+{-
 indexHandler :: Text -> App BsL.ByteString
 indexHandler _ = do
   maybeIndexDir <- view (the @"siteServeIndexDirectory")
   case maybeIndexDir of
     Just dir -> liftIO $ BsL.readFile $ dir <> "/index.html"
     _ -> throwError err404
+-}
 
 -- |For either static files, or js and other files. Disambiguate by checking for /static/ prefix.
 rawHandler :: SiteContext -> Server Raw
@@ -445,7 +441,7 @@ spookFetcherWorker context = do
                 }
               putStrLn $ "Response from YT search: " <> show response
               case response of
-                Left servantError -> loop spookVids spookVidPage (Just time) (Just SpookTemporaryFailure)
+                Left _ -> loop spookVids spookVidPage (Just time) (Just SpookTemporaryFailure)
                 Right searchResult -> do
                   let newSpookVids = mapMaybe (\r -> case r of
                                                   YT.YoutubeVideoId videoId -> Just $ SpookVid videoId
@@ -474,7 +470,7 @@ spookFetcherWorker context = do
             threadDelay 500000 -- micro seconds
             loop spookVids spookVidPage lastSearchTime lastSearchError
           -- Out of vids, no error last time, do search anyway (this case shouldn't happen).
-          ([], Just responseMVar, Nothing) -> doSearch
+          ([], Just _, Nothing) -> doSearch
           -- Out of vids, errored last time and haven't waited for search delay. Reply error for now.
           ([], Just responseMVar, Just err) -> do
             MVar.putMVar responseMVar $ Left err
