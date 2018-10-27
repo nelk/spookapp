@@ -46,12 +46,11 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     UniqueVisitorId visitorId
     deriving Generic Eq Show
 
-  VisitedIp
-    visitedIp Text
-    visitedCount Int
-    redeemedSavedSpooks Int
-    Primary visitedIp
-    UniqueVisitedIp visitedIp
+  Visit
+    ip Text Maybe
+    referrer Text Maybe
+    visitorId Text Maybe
+    Foreign Visitor fkvisitor visitorId
     deriving Generic Eq Show
 |]
 

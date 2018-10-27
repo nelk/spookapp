@@ -260,10 +260,16 @@ cookieToVisitor maybeCookie = runMaybeT $ do
   MaybeT $ getVisitor $ VisitorKey $ Text.decodeUtf8 visId
 
 getSpookHandler :: Maybe Text -> Maybe Text -> Maybe Text -> SockAddr -> Token -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
-getSpookHandler maybeCookie _ _ _ token = do
+getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
   maybeVisitor <- cookieToVisitor maybeCookie
   maybeSpook <- getSpookByToken token
   setSecureCookie <- view (the @"siteSecureCookie")
+
+  _ <- runSql $ Es.insert $ Visit
+    { visitIp = getAddrIpAsText realIpHeader sockAddr
+    , visitReferrer = referrerHeader
+    , visitVisitorId = visitorVisitorId <$> maybeVisitor
+    }
 
   let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
       handle Nothing _ = return $ noHeader $ Left SpookDoesNotExist
@@ -291,7 +297,6 @@ getSpookHandler maybeCookie _ _ _ token = do
 
       -- Returning visitor viewing their spook.
       handle (Just spook) (Just visitor) | savedSpookClaimer spook == Just (visitorVisitorId visitor) =
-        -- TODO: add visit
         return $ noHeader $ Right $ SpookData
           { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
           , token = token
@@ -318,6 +323,12 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
   maybeSpook <- getSpookByToken token
   maybeVisitor <- cookieToVisitor maybeCookie
 
+  _ <- runSql $ Es.insert $ Visit
+    { visitIp = getAddrIpAsText realIpHeader sockAddr
+    , visitReferrer = referrerHeader
+    , visitVisitorId = visitorVisitorId <$> maybeVisitor
+    }
+
   let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Either SpookFailure [Token])
       handle (Just spook) (Just visitor)
         | savedSpookClaimer spook == Just (visitorVisitorId visitor)
@@ -328,8 +339,8 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
             Right newVids -> do
               newTokens <- replicateM (length newVids) generateToken
               runSql $ do
-                forM_ (zip newVids newTokens) $ \(spookVid, token) -> Es.insert $ SavedSpook
-                  { savedSpookToken = unToken token
+                forM_ (zip newVids newTokens) $ \(spookVid, token') -> Es.insert $ SavedSpook
+                  { savedSpookToken = unToken token'
                   , savedSpookParentSpook = Just $ savedSpookToken spook
                   , savedSpookVisits = 0
                   , savedSpookIp = Nothing
@@ -436,7 +447,6 @@ spookFetcherWorker context = do
               case response of
                 Left servantError -> loop spookVids spookVidPage (Just time) (Just SpookTemporaryFailure)
                 Right searchResult -> do
-                  -- TODO: Fill requests when possible, handle failures from YT.
                   let newSpookVids = mapMaybe (\r -> case r of
                                                   YT.YoutubeVideoId videoId -> Just $ SpookVid videoId
                                                   _ -> Nothing) $ YT.resources searchResult
