@@ -145,6 +145,7 @@ instance HasBasePath (Env t reflexM) where
 
 app :: forall t m. R.MonadWidget t m => m ()
 app = do
+  analyticsPageView "main"
   maybeLocation <- getLocation
   apiPath <- computeApiPath
   let tweakRequest = R.ClientOptions $ \r -> return $ r & R.withCredentials .~ True
@@ -179,9 +180,15 @@ landingPage = do
   F.div [RM.mdcCard_, S.mdcThemeBackground, S.clzSpookCard] $ do
     F.section [RM.mdcCardPrimary_, S.clzSpookSection] $
       R.widgetHold (R.text "Loading") $ R.ffor getSpookResultE $ \case
-        (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> void $ spookWidget spookData
-        (R.ResponseSuccess _ (getResponse -> Left spookFailure) _) -> void $ badTokenWidget spookFailure
-        (R.ResponseFailure _ _ _) -> badTokenWidget SpookTemporaryFailure
+        (R.ResponseSuccess _ (getResponse -> Right spookData) _) -> do
+          analyticsEvent "token" "get_success" "" Nothing
+          void $ spookWidget spookData
+        (R.ResponseSuccess _ (getResponse -> Left spookFailure) _) -> do
+          analyticsEvent "token" "get_failure" (Text.pack $ show spookFailure) Nothing
+          void $ badTokenWidget spookFailure
+        (R.ResponseFailure _ e _) -> do
+          analyticsEvent "token" "get_failure" e Nothing
+          badTokenWidget SpookTemporaryFailure
         (R.RequestFailure _ _) -> noTokenWidget
   return ()
 
@@ -271,13 +278,17 @@ spookWidget spookData = do
   rec
     newSpooksResultE <- newSpookRpc' (R.constDyn $ Right $ token spookData) getNewSpooksE
 
-    let widgetStateE = R.ffor newSpooksResultE $ \case
-          (R.ResponseSuccess _ (Right newSpookTokens) _) -> SpookWidgetNewTokens newSpookTokens
-          (R.ResponseSuccess _ (Left spookFailure) _) -> SpookWidgetFailure spookFailure
-          (R.ResponseFailure _ _ _) -> SpookWidgetFailure SpookTemporaryFailure
-          (R.RequestFailure _ _) -> SpookWidgetInitial
-
-    widgetStateDyn <- R.holdDyn SpookWidgetInitial widgetStateE
+    widgetStateDyn <- R.widgetHold (return SpookWidgetInitial) $ R.ffor newSpooksResultE $ \case
+      (R.ResponseSuccess _ (Right newSpookTokens) _) -> do
+        analyticsEvent "token" "new_success" "" $ Just $ length newSpookTokens
+        return $ SpookWidgetNewTokens newSpookTokens
+      (R.ResponseSuccess _ (Left spookFailure) _) -> do
+        analyticsEvent "token" "new_failure" (Text.pack $ show spookFailure) Nothing
+        return $ SpookWidgetFailure spookFailure
+      (R.ResponseFailure _ e _) -> do
+        analyticsEvent "token" "new_failure" e Nothing
+        return $ SpookWidgetFailure SpookTemporaryFailure
+      (R.RequestFailure _ _) -> return SpookWidgetInitial
 
     F.h1 [RM.mdcCardTitleLarge_, S.mdcThemePrimary, S.clzSpookTitle] $
       R.text "You've Been Spooked!"
