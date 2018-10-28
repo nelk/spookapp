@@ -1,6 +1,7 @@
 module Spook.App.Analytics
   ( analyticsScript
   , analyticsPageView
+  , analyticsEvent
   , analyticsSetUserId
   ) where
 

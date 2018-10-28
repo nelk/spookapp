@@ -57,7 +57,7 @@ import qualified JSDOM.HTMLButtonElement as HTMLButtonElement
 import Paths_frontend (getDataFileName)
 import Spook.Common.Model
 import Spook.Common.Api
-import Spook.App.Analytics (analyticsScript, analyticsSetUserId)
+import Spook.App.Analytics (analyticsScript, analyticsSetUserId, analyticsPageView, analyticsEvent)
 import Spook.App.Common (attrHideIf)
 import qualified Spook.App.Style as S
 import Spook.App.Runner (customRun)
@@ -257,6 +257,7 @@ getToken = do
 
 data SpookWidgetState = SpookWidgetInitial | SpookWidgetNewTokens [Token] | SpookWidgetFailure SpookFailure
 
+-- TODO: Analytics
 spookWidget :: forall t m env.
              ( R.MonadWidget t m
              , MonadReader env m
