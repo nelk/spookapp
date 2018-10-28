@@ -59,7 +59,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
         allowed.tcp = [443];
       };
       allow-internal = {
-        allowed.tcp = "0-65535";
+        allowed.tcp = ["0-65535"];
         sourceRanges = [addressRange];
       };
     };
