@@ -12,12 +12,10 @@ library
   hs-source-dirs:      src
   exposed-modules:     Spook.App.Main
                      , Spook.App.Common
-                     , Spook.App.Assets
                      , Spook.App.Analytics
                      , Spook.App.Style
                      , Spook.App.Fluent
                      , Spook.App.Runner
-                     , Spook.App.BootstrapCss
   build-depends:       base >= 4.7 && < 5
                      , bytestring
                      , aeson
