@@ -264,7 +264,6 @@ getToken = do
 
 data SpookWidgetState = SpookWidgetInitial | SpookWidgetNewTokens [Token] | SpookWidgetFailure SpookFailure
 
--- TODO: Analytics
 spookWidget :: forall t m env.
              ( R.MonadWidget t m
              , MonadReader env m
@@ -301,6 +300,7 @@ spookWidget spookData = do
       SpookWidgetFailure e -> R.text (badTokenText e) >> return R.never
       SpookWidgetNewTokens tokens -> do
         appPath <- view getAppPath
+        F.h2 [S.clzSpookMessage, S.clzSpookH2, S.mdcThemePrimary] $ R.text "Send out these new Spooks"
         forM_ tokens $ \(Token tok) -> do
           F.div S.clzTokenWrapper $ do
             let link = appPath <> "#" <> tok
@@ -331,14 +331,13 @@ embedYoutube :: forall t m.
                 -> m ()
 embedYoutube (LinkUrl url) = do
   let attrs :: F.Attrs t = mconcat
-        [ F.toAttrs (F.widthAttr, "1000" :: Text)
-        , F.toAttrs (F.heightAttr, "500" :: Text)
+        [ F.toAttrs (F.widthAttr, "560" :: Text)
+        , F.toAttrs (F.heightAttr, "349" :: Text)
         , F.toAttrs (F.srcAttr, url)
         , F.toAttrs (F.frameborderAttr, "0" :: Text)
         , F.toAttrs (F.allowAttr, "autoplay;encrypted-media" :: Text)
-        , F.toAttrs (F.classAttr, F.unCssClass S.clzSpookVid)
         ]
-  F.iframe attrs (return ())
+  F.div S.clzSpookVid $ F.iframe attrs (return ())
 
 
 {-

@@ -52,6 +52,9 @@ clzSpookImage = "spook-image"
 clzBigButton :: F.CssClass
 clzBigButton = "big-button"
 
+clzSpookH2 :: F.CssClass
+clzSpookH2 = "spook-h2"
+
 clzNewSpookList :: F.CssClass
 clzNewSpookList = "new-spook-list"
 
@@ -418,6 +421,17 @@ css serverPath = do
     clz clzSpookVid Clay.? do
       Clay.marginTop $ Clay.px 20
       Clay.marginBottom $ Clay.px 30
+      Clay.position Clay.relative
+      Clay.paddingBottom $ Clay.pct 56.25 -- 16:9
+      Clay.paddingTop $ Clay.px 25
+      Clay.height $ Clay.px 0
+
+      Clay.iframe Clay.? do
+        Clay.position Clay.absolute
+        Clay.top $ Clay.px 0
+        Clay.left $ Clay.px 0
+        fullWidth
+        fullHeight
 
     clz clzTokenWrapper Clay.? do
       fullWidth
@@ -442,6 +456,10 @@ css serverPath = do
       Clay.button Clay.? do
         Clay.fontSize $ Clay.em 1.8
         Clay.height $ Clay.px 55
+        Clay.border Clay.solid (Clay.px 1) Clay.white
+
+    clz clzSpookH2 Clay.? do
+      Clay.fontSize $ Clay.em 1.8
 
     clz clzSpookImage Clay.? do
       fullWidth
