@@ -9,11 +9,9 @@ module Spook.Common.Api
 
 import Servant.API
 import Data.Text
-import qualified Data.ByteString.Lazy as BsL
 import qualified Data.ByteString as Bs
 
 import Spook.Common.Model
-import Spook.Common.Servant
 
 type RealIpHeader = Header "X-Real-Ip" Text
 type RefererHeader = Header "Referer" Text
