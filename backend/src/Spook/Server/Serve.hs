@@ -311,7 +311,7 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
         runSql "insert_visitor_claim_saved_spook" $ do
           _ <- Es.insert $ Visitor { visitorVisitorId = unToken visitorId }
           Es.update $ \s -> do
-            Es.set s [ SavedSpookClaimer Es.=. Es.val (Just $ unToken visitorId), SavedSpookVisits Es.=. Es.val 1 ]
+            Es.set s [ SavedSpookClaimer Es.=. Es.val (Just $ unToken visitorId), SavedSpookVisits Es.+=. Es.val 1 ]
             Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
         let cookie = def { Cookie.setCookieName = cookieKey
                          , Cookie.setCookieValue = Text.encodeUtf8 $ unToken visitorId
@@ -328,7 +328,10 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
           }
 
       -- Returning visitor viewing their spook.
-      handle (Just spook) (Just visitor) | savedSpookClaimer spook == Just (visitorVisitorId visitor) =
+      handle (Just spook) (Just visitor) | savedSpookClaimer spook == Just (visitorVisitorId visitor) = do
+        runSql "update_saved_spook_revisit" $ Es.update $ \s -> do
+          Es.set s [ SavedSpookVisits Es.+=. Es.val 1 ]
+          Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
         return $ noHeader $ Right $ SpookData
           { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
           , token = token
