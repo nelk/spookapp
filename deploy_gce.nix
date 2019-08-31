@@ -59,6 +59,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
         allowed.tcp = [443];
       };
       allow-internal = {
+        targetTags = ["allow-icmp"];
         allowed.tcp = ["0-65535"];
         sourceRanges = [addressRange];
       };
@@ -70,6 +71,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
   database = {resources, ...}: defaultDeployment {
     machineName = "spook-database-prod";
     diskSize = 20;
+    tags = ["allow-icmp"];
     network = resources.gceNetworks.spooknet;
   };
 
@@ -79,7 +81,7 @@ IP addresses are region-specific and thus most likely can't be migrated to anoth
     diskSize = 10;
     # ipAddress = resources.gceStaticIPs.spookIp;
     ipAddress = "spook-ip";
-    tags = ["public-http" "public-https"];
+    tags = ["public-http" "public-https" "allow-icmp"];
     network = resources.gceNetworks.spooknet;
   };
 }
