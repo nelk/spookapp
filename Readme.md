@@ -8,12 +8,15 @@ The app itself just shows some halloween Youtube videos based off of secret one-
 
 ## Development Tool Setup.
 
-// System tools:
-postgresql
-nix-env -i nixops
+System tools:
+- postgresql
+- nix-env -i nixops
 
-// Use vim ghcid plugin: https://github.com/ndmitchell/ghcid.
+Use vim ghcid plugin: https://github.com/ndmitchell/ghcid.
+
+```bash
 ./develop.sh common common
+```
 
 ## Development DB Setup (see deploy\_logical.nix)
 
@@ -31,10 +34,12 @@ psql postgres
 > GRANT ALL ON DATABASE spook TO spookapp;
 ```
 
-## Building.
+## Building
 
-> ./build\_backend.sh
-> ./build\_frontend\_ghcjs.sh
+```bash
+./build\_backend.sh
+./build\_frontend\_ghcjs.sh
+```
 
 ## Running in local dev mode
 
@@ -70,10 +75,10 @@ Two physical deployment options listed below.
 ```bash
 nixops create deploy\_logical.nix deploy\_vbox.nix --name spook-vbox
 nixops deploy -d spook-vbox
-// Restart/reset both machines from virtualbox UI. TODO - fix this.
+# Restart/reset both machines from virtualbox UI. TODO - fix this.
 nixops deploy -d spook-vbox
-// Ssh into database and run 'systemctl restart postgresql'. TODO - fix this.
-// Ssh into webserver and run 'systemctl restart spook'
+# Ssh into database and run 'systemctl restart postgresql'. TODO - fix this.
+# Ssh into webserver and run 'systemctl restart spook'
 ```
 
 ## Cloud production deployment (GCE):
@@ -81,9 +86,9 @@ nixops deploy -d spook-vbox
 Needs proper GCE setup with service account, and YouTube Data API v3 api key.
 
 ```bash
-// Follow https://nixos.org/nixops/manual/#sec-deploying-to-gce, specifically the following parts.
-// Copy/symlink pkey.pem to project directory.
-// Create .envrc that exports environment variables GCE\_PROJECT, GCE\_SERVICE\_ACCOUNT, ACCESS\_KEY\_PATH, and YOUTUBE\_KEY.
+# Follow https://nixos.org/nixops/manual/#sec-deploying-to-gce, specifically the following parts.
+# Copy/symlink pkey.pem to project directory.
+# Create .envrc that exports environment variables GCE\_PROJECT, GCE\_SERVICE\_ACCOUNT, ACCESS\_KEY\_PATH, and YOUTUBE\_KEY.
 source .envrc
 nixops create deploy\_logical.nix deploy\_gce.nix --name spook-gce
 nixops deploy -d spook-gce
