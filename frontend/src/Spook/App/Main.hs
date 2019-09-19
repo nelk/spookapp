@@ -21,6 +21,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import Control.Lens
 import Data.Generics.Product (the)
+import Control.Applicative ((<|>))
 import Control.Monad (void, forM_)
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO)
@@ -227,7 +228,8 @@ getToken = do
     liftIO $ triggerTokenMaybe maybeToken
 
   Dom.liftJSM $ EventM.addListener window WindowEventHandlers.hashChange listener False
-  startToken <- Dom.liftJSM getTokenMaybe
+  -- If no token provided, use the root magic token.
+  startToken <- (<|> Just magicToken) <$> Dom.liftJSM getTokenMaybe
   maybeTokenE <- R.holdDyn startToken newTokenMaybeE
   return $ maybe (Left "No token in path") Right <$> maybeTokenE
 

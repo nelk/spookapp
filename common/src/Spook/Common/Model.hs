@@ -24,3 +24,6 @@ data SpookFailure = VisitorAlreadyClaimedSpook | SpookAlreadyClaimed | SpookDoes
 data StatLog = LogTimeSpent Time.UTCTime
   deriving (Eq, Show, Generic)
 
+magicToken :: Token
+magicToken = Token "magictoken23740923"
+

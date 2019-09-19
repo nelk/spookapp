@@ -189,9 +189,6 @@ startApp = do
   putStrLn $ "Running on port " ++ show port
   run port $ app context
 
-magicToken :: Token
-magicToken = Token "magictoken23740923"
-
 insertTestData :: MonadIO m => Es.SqlPersistT m ()
 insertTestData = do {- forM_ testData $ \savedSpook -> do
   maybeDbSpook :: Maybe (Es.Entity SavedSpook) <- Es.getBy $ UniqueToken $ savedSpookToken savedSpook
@@ -301,8 +298,22 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
     , visitVisitorId = visitorVisitorId <$> maybeVisitor
     }
 
-  let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
+  let handleSpookRevisit :: SavedSpook -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
+      handleSpookRevisit spook = do
+        runSql "update_saved_spook_revisit" $ Es.update $ \s -> do
+          Es.set s [ SavedSpookVisits Es.+=. Es.val 1 ]
+          Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
+        return $ noHeader $ Right $ SpookData
+          { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
+          , token = token
+          , numSpooked = savedSpookChildSpookCount spook
+          }
+
+      handle :: Maybe SavedSpook -> Maybe Visitor -> App (Headers '[SetCookieHeader] (Either SpookFailure SpookData))
       handle Nothing _ = return $ noHeader $ Left SpookDoesNotExist
+
+      -- Magic root spook.
+      handle (Just spook) _ | savedSpookToken spook == unToken magicToken = handleSpookRevisit spook
 
       -- New visitor claiming spook.
       handle (Just spook) Nothing | isNothing (savedSpookClaimer spook) = do
@@ -328,15 +339,7 @@ getSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
           }
 
       -- Returning visitor viewing their spook.
-      handle (Just spook) (Just visitor) | savedSpookClaimer spook == Just (visitorVisitorId visitor) = do
-        runSql "update_saved_spook_revisit" $ Es.update $ \s -> do
-          Es.set s [ SavedSpookVisits Es.+=. Es.val 1 ]
-          Es.where_ (s Es.^. SavedSpookToken Es.==. Es.val (savedSpookToken spook))
-        return $ noHeader $ Right $ SpookData
-          { videoUrl = LinkUrl $ createVideoUrl $ savedSpookVidId spook
-          , token = token
-          , numSpooked = savedSpookChildSpookCount spook
-          }
+      handle (Just spook) (Just visitor) | savedSpookClaimer spook == Just (visitorVisitorId visitor) = handleSpookRevisit spook
 
       -- Someone else claimed this spook already.
       handle (Just spook) (Just visitor)
@@ -366,8 +369,9 @@ newSpookHandler maybeCookie referrerHeader realIpHeader sockAddr token = do
 
   let handle :: Maybe SavedSpook -> Maybe Visitor -> App (Either SpookFailure [Token])
       handle (Just spook) (Just visitor)
-        | savedSpookClaimer spook == Just (visitorVisitorId visitor)
-        && (savedSpookChildSpookCount spook == 0 || savedSpookToken spook == unToken magicToken) = do
+        | (savedSpookToken spook == unToken magicToken)
+          || (savedSpookClaimer spook == Just (visitorVisitorId visitor)
+            && (savedSpookChildSpookCount spook == 0 || savedSpookToken spook == unToken magicToken)) = do
           newVidsEither :: Either SpookFailure [SpookVid] <- requestNewVids
           case newVidsEither of
             Left e -> return $ Left e
